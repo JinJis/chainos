@@ -94,7 +94,11 @@ services:
       start_period: 20s
 
   # ── one-shot: build + publish the AI Data Centers seed, then exit ───────────
+  # Reuses the Engine image. The `build` block (same context/tag as `engine`)
+  # means Compose builds it locally instead of trying to pull chainos-engine:local.
   seed:
+    build:
+      context: ./services/engine
     image: chainos-engine:local
     container_name: chainos-seed
     environment: *datastore-env
