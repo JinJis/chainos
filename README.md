@@ -6,7 +6,7 @@
 > non-negotiable principle: nothing reaches users that wasn't built and verified
 > from disclosures by an admin + a multi-LLM agent loop.
 
-See **`Chainos_PRD_v3.md`** (product spec) and **`CLAUDE.md`** (engineering source of truth).
+See **`designs/Chainos_PRD_v0.0.1.md`** (product spec) and **`CLAUDE.md`** (engineering source of truth).
 
 ## Two-Track architecture
 

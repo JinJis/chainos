@@ -4,9 +4,9 @@
 
 | Field | Value |
 |---|---|
-| Doc version | **v3.0.0** |
+| Doc version | **v0.0.1** |
 | Date | 2026-06-01 |
-| Status | Draft (ready for development kickoff) |
+| Status | Implemented (M0–M7 built) |
 | Target | MVP in ~12 weeks / Predict beta +6 weeks |
 | Audience | PO, backend/frontend engineers, data/AI engineers, Claude Code |
 
@@ -315,17 +315,22 @@ expansion_ratio = clamp(1.0 + k · normalize(momentum), 0.7, 1.4)   # visual siz
 
 ## 11. Development roadmap (milestones)
 
+This design doc is built on milestones **M0 → M7**. Each is a functional vertical slice,
+committed independently so progress stays reviewable. M0–M6 are the product build; M7 makes
+the whole stack runnable in one command.
+
 | Stage | Est. | Deliverable |
 |---|---|---|
-| **M0 — Scaffolding** | 1w | monorepo, DB setup (Neo4j/PG/Redis), LLM router skeleton, CLAUDE.md wired |
-| **M1 — Studio MVP** | 3w | theme create → RESEARCH/DEEP discovery → Staging save. Basic Need-Fact tickets |
-| **M2 — Verification loop** | 2w | material upload → MEDIUM/LOW parse → edge lock → iterative expansion. Validation gate |
-| **M3 — Publish pipeline** | 1w | Staging→Production sync, diff/validation report |
+| **M0 — Scaffolding** | 1w | monorepo, DB setup (Neo4j/PG/Redis), LLM router skeleton, shared graph-schema contract, CLAUDE.md wired |
+| **M1 — Studio MVP** | 3w | theme create → RESEARCH/DEEP discovery → Staging save. Basic Need-Fact tickets, agent thinking-trace |
+| **M2 — Verification loop** | 2w | material upload → MEDIUM/LOW parse → edge lock to source → iterative expansion. Validation gate |
+| **M3 — Publish pipeline** | 1w | gated atomic Staging→Production sync, diff/validation report, seed publish |
 | **M4 — Terminal Macro** | 2w | 3D node map, market-cap sizing, depth slider, flow filters, 60fps |
-| **M5 — Terminal Micro** | 2w | Company Drawer, product drill-down, trust badges, price chart |
-| **M6 — Predict beta** | 3w | news pipeline, momentum score, Ghost Node expand/contract, tooltips |
+| **M5 — Terminal Micro** | 2w | Company Drawer, product drill-down, neon-laser, trust badges, price chart, EN/KR i18n |
+| **M6 — Predict beta** | 3w | news pipeline, momentum score, Ghost Node expand/contract, insight tooltips |
+| **M7 — Containerized deployment** | 1w | Dockerfiles for every service + one-command `docker compose up` (datastores → Engine+migrate → seed → Studio/Terminal/pipeline) |
 
-(Some stages parallelize. ~14 weeks single-track.)
+(Some stages parallelize. ~15 weeks single-track.)
 
 ---
 

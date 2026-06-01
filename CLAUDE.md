@@ -1,7 +1,7 @@
 # CLAUDE.md — Chainos
 
 > Guidance for Claude Code when working in this repository.
-> Full product spec: see **`Chainos_PRD_v3.md`**. This file is the engineering source of truth; when in doubt, the PRD wins on *what*, this file wins on *how*.
+> Full product spec: see **`designs/Chainos_PRD_v0.0.1.md`**. This file is the engineering source of truth; when in doubt, the PRD wins on *what*, this file wins on *how*.
 
 ---
 
@@ -42,8 +42,10 @@ Chainos Studio (Admin)  →  STAGING DB  --[explicit Publish]-->  PRODUCTION DB 
   /graph-schema    # shared node/edge type defs (single source of truth for the schema)
   /ui              # shared design tokens / components
 /infra             # docker-compose, db init, migrations
+/designs           # product specs / design docs (PRD lives here)
+/ideas             # scratch space for not-yet-promoted ideas
 CLAUDE.md
-Chainos_PRD_v3.md
+designs/Chainos_PRD_v0.0.1.md
 ```
 
 > If the actual layout drifts, update this section in the same PR.
@@ -180,7 +182,7 @@ MODEL_LOW_GOOGLE=gemini-3.1-flash-lite
 
 ## 10. Working style for Claude Code
 
-- **Read `Chainos_PRD_v3.md` before non-trivial work.** Match its terminology exactly (Studio/Terminal, Staging/Production, Need-Fact, Predict).
+- **Read `designs/Chainos_PRD_v0.0.1.md` before non-trivial work.** Match its terminology exactly (Studio/Terminal, Staging/Production, Need-Fact, Predict).
 - Make focused changes; keep PRs scoped to one milestone slice (see PRD §11).
 - When touching the schema, edit `packages/graph-schema` and propagate — don't fork type defs.
 - Prefer iterative refinement over rewrites; preserve working code.
