@@ -173,6 +173,75 @@ class GraphRepo:
                 return {"nodes": 0, "edges": 0}
             return {"nodes": rec["nodes"], "edges": rec["edges"]}
 
+    # ── verification loop: lock figures to evidence (M2) ──────────────────────
+    def upsert_source_node(self, theme_id: str, source: dict[str, Any]) -> None:
+        self.upsert_node(theme_id, {"label": "Source", **source})
+
+    def lock_edge(
+        self, theme_id: str, payload: dict[str, Any], updates: dict[str, Any]
+    ) -> int:
+        """Set the locked value + trust meta on the targeted SUPPLIES/REVENUE_FLOW/
+        INVESTS_IN edge. Returns the number of edges updated."""
+        etype = payload["type"]
+        if etype not in _EDGE_TYPES:
+            raise ValueError(f"Unknown edge type: {etype!r}")
+        from_uid = self._uid(theme_id, payload["from"])
+        to_uid = self._uid(theme_id, payload["to"])
+        where_product = ""
+        params: dict[str, Any] = {
+            "from_uid": from_uid,
+            "to_uid": to_uid,
+            "updates": updates,
+        }
+        if payload.get("product_ref"):
+            where_product = "AND r.product_ref = $product_ref "
+            params["product_ref"] = payload["product_ref"]
+        cypher = (
+            f"MATCH (a {{_uid: $from_uid}})-[r:`{etype}`]->(b {{_uid: $to_uid}}) "
+            f"WHERE true {where_product}"
+            "SET r += $updates "
+            "RETURN count(r) AS n"
+        )
+        with self._driver.session() as s:
+            rec = s.run(cypher, **params).single()
+            return rec["n"] if rec else 0
+
+    def lock_node_field(
+        self,
+        theme_id: str,
+        label: str,
+        node_id: str,
+        updates: dict[str, Any],
+        *,
+        source_id: str | None = None,
+    ) -> None:
+        """Set a quantitative node field + (optionally) a SOURCED_FROM link to its
+        evidence Source node."""
+        if label not in _NODE_LABELS:
+            raise ValueError(f"Unknown node label: {label!r}")
+        uid = self._uid(theme_id, node_id)
+        with self._driver.session() as s:
+            s.run(
+                f"MATCH (n:`{label}` {{_uid: $uid}}) SET n += $updates",
+                uid=uid,
+                updates=updates,
+            )
+            if source_id:
+                s.run(
+                    "MATCH (n {_uid: $uid}), (src:`Source` {_uid: $src_uid}) "
+                    "MERGE (n)-[:`SOURCED_FROM`]->(src)",
+                    uid=uid,
+                    src_uid=self._uid(theme_id, source_id),
+                )
+
+    def has_source_node(self, theme_id: str, source_id: str) -> bool:
+        with self._driver.session() as s:
+            rec = s.run(
+                "MATCH (src:`Source` {_uid: $uid}) RETURN count(src) AS n",
+                uid=self._uid(theme_id, source_id),
+            ).single()
+            return bool(rec and rec["n"])
+
     # ── company drill-down (Micro view, M5) ───────────────────────────────────
     def get_company_detail(self, theme_id: str, company_id: str) -> dict[str, Any] | None:
         uid = self._uid(theme_id, company_id)

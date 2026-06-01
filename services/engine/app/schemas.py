@@ -58,6 +58,8 @@ class TicketOut(BaseModel):
     status: str
     created_at: datetime
     resolved_at: datetime | None = None
+    payload: dict[str, Any] = Field(default_factory=dict)
+    locked_value: float | None = None
     source_count: int = 0
 
     class Config:
@@ -86,3 +88,41 @@ class SourceOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ── Verification loop (M2) ────────────────────────────────────────────────────
+class ParsePreview(BaseModel):
+    field: str
+    value: float | None
+    span: str
+    extracted_by: str
+    confidence: str
+    found: bool
+    source_id: str | None = None
+
+
+class ApproveBody(BaseModel):
+    # Optional admin override of the parsed value.
+    value: float | None = None
+
+
+class ValidationOut(BaseModel):
+    ok: bool
+    total: int
+    passed: int
+    failed: int
+    failures: list[dict[str, Any]]
+
+
+# ── Graph editor (M2) ─────────────────────────────────────────────────────────
+class EdgeEdit(BaseModel):
+    """Manual edit of a staged edge (confidence toggle / value correction)."""
+
+    type: str
+    from_id: str = Field(alias="from")
+    to_id: str = Field(alias="to")
+    product_ref: str | None = None
+    updates: dict[str, Any]
+
+    class Config:
+        populate_by_name = True

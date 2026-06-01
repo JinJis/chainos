@@ -1,14 +1,30 @@
-"""Need-Fact ticket inbox + source attachment."""
+"""Need-Fact ticket inbox + source attachment + evidence parse/approve."""
 from __future__ import annotations
+
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from sqlalchemy import select
 
+from ..agent.extract import apply_lock, parse_evidence
 from ..db import session_scope
-from ..models import NeedFactTicket, Source
-from ..schemas import SourceOut, TicketOut
+from ..llm import Provider
+from ..models import NeedFactTicket, Source, Theme
+from ..schemas import ApproveBody, ParsePreview, SourceOut, TicketOut
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
+
+
+def _provider_for(theme: Theme | None) -> Provider | None:
+    name = (theme.model_assignment or {}).get("MEDIUM") if theme else None
+    return Provider(name) if name in ("anthropic", "google") else None
+
+
+def _latest_source(ticket: NeedFactTicket) -> Source | None:
+    sources = [s for s in ticket.sources if s.content_text]
+    if not sources:
+        return None
+    return max(sources, key=lambda s: s.created_at)
 
 
 def _to_out(t: NeedFactTicket) -> TicketOut:
@@ -78,3 +94,69 @@ async def attach_source(
         s.add(src)
         s.flush()
         return SourceOut.model_validate(src)
+
+
+@router.post("/{ticket_id}/parse", response_model=ParsePreview)
+def parse_ticket(ticket_id: str) -> ParsePreview:
+    """MEDIUM/LOW parse of the latest uploaded evidence — preview only, no write."""
+    with session_scope() as s:
+        ticket = s.get(NeedFactTicket, ticket_id)
+        if ticket is None:
+            raise HTTPException(404, "ticket not found")
+        source = _latest_source(ticket)
+        if source is None:
+            raise HTTPException(400, "no evidence uploaded to this ticket yet")
+        theme = s.get(Theme, ticket.theme_id)
+        field = (ticket.payload or {}).get("field", "value")
+        preview = parse_evidence(
+            content_text=source.content_text,
+            field=field,
+            provider=_provider_for(theme),
+        )
+        preview["source_id"] = source.id
+        return ParsePreview(**preview)
+
+
+@router.post("/{ticket_id}/approve")
+def approve_ticket(ticket_id: str, body: ApproveBody) -> dict:
+    """Approve the parse: lock the value + trust meta into Staging and resolve."""
+    with session_scope() as s:
+        ticket = s.get(NeedFactTicket, ticket_id)
+        if ticket is None:
+            raise HTTPException(404, "ticket not found")
+        source = _latest_source(ticket)
+        if source is None:
+            raise HTTPException(400, "no evidence uploaded to this ticket yet")
+        theme = s.get(Theme, ticket.theme_id)
+        payload = ticket.payload or {}
+        field = payload.get("field", "value")
+        preview = parse_evidence(
+            content_text=source.content_text,
+            field=field,
+            provider=_provider_for(theme),
+        )
+        if body.value is not None:  # admin override
+            preview["value"] = body.value
+            preview["confidence"] = "verified"
+            preview["found"] = True
+        if preview["value"] is None:
+            raise HTTPException(422, "could not extract a figure; provide an explicit value")
+
+        result = apply_lock(
+            theme_id=ticket.theme_id,
+            payload=payload,
+            source_meta={
+                "id": source.id,
+                "type": source.type,
+                "url": source.url,
+                "publisher": source.publisher,
+                "as_of_date": source.as_of_date,
+                "confidence": source.confidence,
+            },
+            preview=preview,
+        )
+        ticket.status = "resolved"
+        ticket.resolved_at = datetime.now(UTC)
+        ticket.locked_value = preview["value"]
+        source.verified = True
+        return {"status": "resolved", "ticket_id": ticket_id, **result}

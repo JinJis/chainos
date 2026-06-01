@@ -162,6 +162,7 @@ def _gaps(state: AgentState) -> AgentState:
             continue
         weak = not e.get("source_id") or e.get("confidence") == "estimated"
         if weak:
+            field = "allocation_pct" if e["type"] == "SUPPLIES" else "amount"
             specs.append(
                 {
                     "metric": f"{e['type']} {e.get('product_ref', e.get('period', ''))}".strip(),
@@ -173,6 +174,14 @@ def _gaps(state: AgentState) -> AgentState:
                         else "Figure is only an estimate; firmer disclosure evidence requested."
                     ),
                     "priority": 1 if not e.get("source_id") else 2,
+                    "payload": {
+                        "kind": "edge",
+                        "type": e["type"],
+                        "from": e["from"],
+                        "to": e["to"],
+                        "product_ref": e.get("product_ref"),
+                        "field": field,
+                    },
                 }
             )
     for n in state.get("nodes", []):
@@ -183,6 +192,12 @@ def _gaps(state: AgentState) -> AgentState:
                     "target_ref": n["id"],
                     "reason": "Missing live market cap for node sizing.",
                     "priority": 2,
+                    "payload": {
+                        "kind": "node",
+                        "label": "Company",
+                        "node_id": n["id"],
+                        "field": "market_cap",
+                    },
                 }
             )
     return {

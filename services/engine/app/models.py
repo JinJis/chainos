@@ -77,6 +77,11 @@ class NeedFactTicket(IdMixin, TimestampMixin, Base):
     priority: Mapped[int] = mapped_column(Integer, default=2)
     status: Mapped[str] = mapped_column(String(20), default="open")
     resolved_at: Mapped[datetime | None] = mapped_column(default=None)
+    # Structured locator the verification loop uses to find + lock the target in
+    # Staging: {kind: edge|node, type, from, to, product_ref, field, label, node_id}.
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    # Value written back once an admin uploads evidence and the parse is approved.
+    locked_value: Mapped[float | None] = mapped_column(default=None)
 
     theme: Mapped[Theme] = relationship(back_populates="tickets")
     sources: Mapped[list[Source]] = relationship(back_populates="ticket")

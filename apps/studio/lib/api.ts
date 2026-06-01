@@ -27,6 +27,8 @@ export interface Ticket {
   priority: number;
   status: string;
   created_at: string;
+  payload: Record<string, unknown>;
+  locked_value: number | null;
   source_count: number;
 }
 
@@ -36,6 +38,40 @@ export interface AgentEvent {
   message: string;
   job_id?: string;
   data?: Record<string, unknown>;
+}
+
+export interface ParsePreview {
+  field: string;
+  value: number | null;
+  span: string;
+  extracted_by: string;
+  confidence: string;
+  found: boolean;
+  source_id: string | null;
+}
+
+export interface ValidationReport {
+  ok: boolean;
+  total: number;
+  passed: number;
+  failed: number;
+  failures: { ref: string; kind: string; missing: string[] }[];
+}
+
+export interface GraphEdge {
+  type: string;
+  from: string;
+  to: string;
+  product_ref?: string;
+  allocation_pct?: number;
+  confidence?: string;
+  source_id?: string;
+  [k: string]: unknown;
+}
+
+export interface GraphPayload {
+  nodes: Record<string, unknown>[];
+  edges: GraphEdge[];
 }
 
 async function json<T>(res: Response): Promise<T> {
@@ -65,6 +101,34 @@ export const api = {
     fetch(`${BASE}/tickets/${ticketId}/attach`, { method: 'POST', body: form }).then((r) =>
       json(r),
     ),
+  parseTicket: (ticketId: string) =>
+    fetch(`${BASE}/tickets/${ticketId}/parse`, { method: 'POST' }).then((r) =>
+      json<ParsePreview>(r),
+    ),
+  approveTicket: (ticketId: string, value?: number) =>
+    fetch(`${BASE}/tickets/${ticketId}/approve`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ value: value ?? null }),
+    }).then((r) => json(r)),
+  validate: (themeId: string) =>
+    fetch(`${BASE}/themes/${themeId}/validate`).then((r) => json<ValidationReport>(r)),
+  stagingGraph: (themeId: string, views?: string[]) => {
+    const q = views?.length ? `?${views.map((v) => `views=${v}`).join('&')}` : '';
+    return fetch(`${BASE}/themes/${themeId}/staging-graph${q}`).then((r) => json<GraphPayload>(r));
+  },
+  editEdge: (themeId: string, edge: GraphEdge, updates: Record<string, unknown>) =>
+    fetch(`${BASE}/themes/${themeId}/edges/edit`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        type: edge.type,
+        from: edge.from,
+        to: edge.to,
+        product_ref: edge.product_ref ?? null,
+        updates,
+      }),
+    }).then((r) => json(r)),
 };
 
 /** Run the agent and invoke `onEvent` for each streamed SSE line. */

@@ -3,7 +3,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useRef, useState } from 'react';
-import { api, runAgent, type AgentEvent, type Ticket } from '../../../lib/api';
+import { api, runAgent, type AgentEvent, type ParsePreview, type Ticket } from '../../../lib/api';
+import { VerifyPanel } from '../../../components/VerifyPanel';
+import { FlowsEditor } from '../../../components/FlowsEditor';
 
 const KIND_COLOR: Record<string, string> = {
   start: 'var(--dim)',
@@ -123,6 +125,11 @@ export default function ThemeConsole({ params }: { params: { id: string } }) {
           </div>
         </section>
       </div>
+
+      <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', alignItems: 'start' }}>
+        <VerifyPanel themeId={themeId} />
+        <FlowsEditor themeId={themeId} />
+      </div>
     </div>
   );
 }
@@ -130,11 +137,24 @@ export default function ThemeConsole({ params }: { params: { id: string } }) {
 function TicketCard({ ticket, themeId }: { ticket: Ticket; themeId: string }) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
+  const [preview, setPreview] = useState<ParsePreview | null>(null);
   const attach = useMutation({
     mutationFn: (form: FormData) => api.attachSource(ticket.id, form),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['tickets', themeId] });
       setOpen(false);
+    },
+  });
+  const parse = useMutation({
+    mutationFn: () => api.parseTicket(ticket.id),
+    onSuccess: (p) => setPreview(p),
+  });
+  const approve = useMutation({
+    mutationFn: () => api.approveTicket(ticket.id, preview?.value ?? undefined),
+    onSuccess: () => {
+      setPreview(null);
+      qc.invalidateQueries({ queryKey: ['tickets', themeId] });
+      qc.invalidateQueries({ queryKey: ['staging', themeId, 'supply'] });
     },
   });
 
@@ -158,16 +178,54 @@ function TicketCard({ ticket, themeId }: { ticket: Ticket; themeId: string }) {
       <div className="dim" style={{ fontSize: 12, margin: '4px 0' }}>
         {ticket.target_ref} — {ticket.reason}
       </div>
-      <div className="row" style={{ gap: 8 }}>
+      <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
         <span className="dim" style={{ fontSize: 12 }}>
           {ticket.source_count} source(s)
+          {ticket.locked_value != null && (
+            <span style={{ color: 'var(--ok)' }}> · locked {ticket.locked_value}</span>
+          )}
         </span>
         {ticket.status === 'open' && (
           <button onClick={() => setOpen((o) => !o)} style={{ padding: '4px 10px', fontSize: 12 }}>
             {open ? 'Cancel' : '+ Attach evidence'}
           </button>
         )}
+        {ticket.status === 'open' && ticket.source_count > 0 && (
+          <button
+            onClick={() => parse.mutate()}
+            disabled={parse.isPending}
+            style={{ padding: '4px 10px', fontSize: 12 }}
+          >
+            {parse.isPending ? 'Parsing…' : '🔍 Parse (MEDIUM)'}
+          </button>
+        )}
       </div>
+      {preview && (
+        <div
+          style={{
+            marginTop: 8,
+            padding: 8,
+            borderRadius: 6,
+            border: '1px solid var(--border)',
+            background: '#04060c',
+            fontSize: 12,
+          }}
+        >
+          <div className="mono">
+            extracted <b style={{ color: 'var(--ok)' }}>{String(preview.value)}</b> for{' '}
+            {preview.field} — span “{preview.span}”
+          </div>
+          <div className="dim">by {preview.extracted_by}</div>
+          <button
+            className="primary"
+            onClick={() => approve.mutate()}
+            disabled={approve.isPending || !preview.found}
+            style={{ marginTop: 6, padding: '4px 12px', fontSize: 12 }}
+          >
+            {approve.isPending ? 'Locking…' : '✓ Approve & lock to source'}
+          </button>
+        </div>
+      )}
       {open && (
         <form
           style={{ marginTop: 8 }}
