@@ -1,0 +1,28 @@
+{
+  "name": "@chainos/graph-schema",
+  "version": "0.1.0",
+  "description": "Single source of truth for Chainos knowledge-graph node/edge types (TS + generated Python mirror)",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "files": ["dist", "src"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "gen": "tsx gen/gen-python.ts",
+    "test": "tsx --test src/*.test.ts"
+  },
+  "dependencies": {
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.4"
+  }
+}

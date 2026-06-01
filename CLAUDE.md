@@ -127,25 +127,31 @@ Required attrs on any quantitative value: `base_date`, `next_update`, `confidenc
 
 ## 8. Commands
 
-> Fill these in as the repo materializes; keep this list current — Claude Code relies on it.
+> Keep this list current — Claude Code relies on it. A root `Makefile` wraps these (`make help`).
 
 ```bash
 # install
-pnpm install                        # JS workspaces
-uv sync                             # or: pip install -e services/engine
+pnpm install                                   # JS workspaces
+cd services/engine && uv sync --extra dev      # Python deps (pipeline likewise)
+
+# infra (neo4j, postgres+pgvector, redis)
+docker compose -f infra/docker-compose.yml up -d        # or: make up
+
+# schema: regenerate the Python mirror after editing packages/graph-schema
+pnpm --filter @chainos/graph-schema gen                  # or: make schema
 
 # dev
-pnpm --filter terminal dev
-pnpm --filter studio dev
-uvicorn services.engine.main:app --reload
+pnpm --filter @chainos/terminal dev                      # or: make terminal (:3000)
+pnpm --filter @chainos/studio dev                        # or: make studio   (:3001)
+cd services/engine && uv run uvicorn app.main:app --reload --port 8000   # or: make engine
 
-# infra
-docker compose -f infra/docker-compose.yml up -d   # neo4j, postgres, redis
+# seed: build + publish the AI Data Centers sample graph
+cd services/engine && uv run python -m app.seed.load     # or: make seed
 
 # quality (run before declaring done)
-pnpm lint && pnpm typecheck
-ruff check services && mypy services
-pnpm test ; pytest services
+pnpm lint && pnpm typecheck                              # JS
+cd services/engine && uv run ruff check app tests && uv run mypy app
+pnpm test ; cd services/engine && uv run pytest          # or: make test
 ```
 
 ---
