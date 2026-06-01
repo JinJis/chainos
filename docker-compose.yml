@@ -50,6 +50,8 @@ services:
     image: postgres:16-alpine
     container_name: chainos-postgres
     ports: ["5432:5432"]
+    # Docker's default /dev/shm is 64 MB; Postgres can crash under it on Linux.
+    shm_size: 256mb
     environment:
       POSTGRES_USER: chainos
       POSTGRES_PASSWORD: chainos-dev-pw
