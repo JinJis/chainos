@@ -35,7 +35,7 @@ services:
       NEO4J_AUTH: neo4j/chainos-dev-pw
       NEO4J_PLUGINS: '["apoc"]'
       NEO4J_dbms_security_procedures_unrestricted: apoc.*
-    volumes: ["./infra/.data/neo4j:/data"]
+    volumes: ["neo4j-data:/data"]
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:7474 || exit 1"]
       interval: 10s
@@ -51,7 +51,7 @@ services:
       POSTGRES_PASSWORD: chainos-dev-pw
       POSTGRES_DB: chainos
     volumes:
-      - ./infra/.data/postgres:/var/lib/postgresql/data
+      - postgres-data:/var/lib/postgresql/data
       - ./infra/db/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U chainos -d chainos"]
@@ -63,7 +63,7 @@ services:
     image: redis:7-alpine
     container_name: chainos-redis
     ports: ["6379:6379"]
-    volumes: ["./infra/.data/redis:/data"]
+    volumes: ["redis-data:/data"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -142,3 +142,10 @@ services:
     ports: ["3000:3000"]
     depends_on:
       engine: { condition: service_healthy }
+
+# Docker-managed named volumes — portable across machines, no host-path
+# ownership/permission issues. Wipe with `docker compose down -v`.
+volumes:
+  neo4j-data:
+  postgres-data:
+  redis-data:

@@ -49,8 +49,7 @@ Then open:
 | http://localhost:8000/health | **Engine** API |
 
 Watch the seed publish: `docker compose logs -f seed`. Stop everything: `docker compose down`
-(add `-v`-equivalent `rm -rf infra/.data` to wipe data). `make docker-up` / `make docker-down`
-wrap these.
+(add `-v` to also wipe the data volumes). `make docker-up` / `make docker-down` wrap these.
 
 > No LLM keys needed — the Engine runs deterministic/**offline** and the seed + demo still work.
 > For live model calls, create a `.env` with `ANTHROPIC_API_KEY` / `GOOGLE_API_KEY`; Compose passes
