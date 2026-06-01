@@ -2,14 +2,15 @@
 
 import { FLOW_VIEWS } from '@chainos/graph-schema';
 import { useCanvas, type FlowView } from '../lib/store';
+import { useT, type StringKey } from '../lib/i18n';
 import type { ThemeRef } from '../lib/api';
 
-const VIEW_LABEL: Record<FlowView, string> = {
-  supply: 'Supply chain',
-  revenue: 'Revenue flow',
-  investment: 'Investment',
-  cost: 'Cost',
-  rnd: 'R&D',
+const VIEW_KEY: Record<FlowView, StringKey> = {
+  supply: 'supplyChain',
+  revenue: 'revenueFlow',
+  investment: 'investment',
+  cost: 'cost',
+  rnd: 'rnd',
 };
 
 export function Hud({
@@ -23,7 +24,9 @@ export function Hud({
   nodeCount: number;
   visibleCount: number;
 }) {
-  const { depth, setDepth, views, toggleView, predict, togglePredict, setThemeId } = useCanvas();
+  const { depth, setDepth, views, toggleView, predict, togglePredict, setThemeId, lang, setLang } =
+    useCanvas();
+  const t = useT();
   const depthMax = theme?.depth_max ?? 3;
 
   return (
@@ -36,7 +39,7 @@ export function Hud({
             {theme && <span className="dim" style={{ fontSize: 12 }}>v{theme.version}</span>}
           </div>
           <div className="dim" style={{ fontSize: 12, marginTop: 2 }}>
-            {visibleCount}/{nodeCount} companies · depth {depth}
+            {visibleCount}/{nodeCount} {t('companies')} · {t('depth')} {depth}
           </div>
           {themes.length > 1 && (
             <select
@@ -71,20 +74,27 @@ export function Hud({
               className={`toggle ${views.includes(v) ? 'on' : ''}`}
               onClick={() => toggleView(v)}
             >
-              {VIEW_LABEL[v]}
+              {t(VIEW_KEY[v])}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Top-right: Predict switch */}
-      <div className="hud" style={{ top: 16, right: 16 }}>
+      {/* Top-right: language + Predict switch */}
+      <div className="hud" style={{ top: 16, right: 16, display: 'flex', gap: 8 }}>
+        <button
+          className="toggle"
+          style={{ padding: '8px 12px', fontSize: 13 }}
+          onClick={() => setLang(lang === 'en' ? 'ko' : 'en')}
+        >
+          {lang === 'en' ? '한국어' : 'EN'}
+        </button>
         <button
           className={`toggle ${predict ? 'on' : ''}`}
           style={{ padding: '8px 16px', fontSize: 13 }}
           onClick={togglePredict}
         >
-          ✨ Predict {predict ? 'ON' : 'OFF'}
+          ✨ {t('predict')} {predict ? 'ON' : 'OFF'}
         </button>
       </div>
 
@@ -115,8 +125,7 @@ export function Hud({
       {/* Bottom-left: disclaimer */}
       <div className="hud" style={{ bottom: 16, left: 16 }}>
         <div className="disclaimer glass" style={{ padding: '6px 10px', maxWidth: 320 }}>
-          Not investment advice. Figures carry an as-of date &amp; source. Predict is a
-          momentum simulation, not a forecast.
+          {t('notAdvice')}
         </div>
       </div>
     </>

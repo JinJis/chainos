@@ -7,13 +7,16 @@ import { useEffect, useMemo } from 'react';
 import { api } from '../lib/api';
 import { computeLayout } from '../lib/layout';
 import { useCanvas } from '../lib/store';
+import { useT } from '../lib/i18n';
 import { Hud } from '../components/Hud';
+import { Drawer } from '../components/Drawer';
 
 // R3F cannot server-render; load the canvas client-only.
 const Scene = dynamic(() => import('../components/Scene').then((m) => m.Scene), { ssr: false });
 
 export default function TerminalPage() {
   const { themeId, setThemeId, depth, views } = useCanvas();
+  const t = useT();
 
   const { data: themes } = useQuery({ queryKey: ['themes'], queryFn: api.themes });
 
@@ -65,15 +68,14 @@ export default function TerminalPage() {
         nodeCount={graph?.nodes.length ?? 0}
         visibleCount={visibleCount}
       />
+      <Drawer />
       {(isLoading || !themeId) && (
         <div
           className="hud"
           style={{ inset: 0, display: 'grid', placeItems: 'center' }}
         >
           <div className="glass" style={{ padding: '20px 28px' }}>
-            {!themeId && themes?.length === 0
-              ? 'No published themes yet. Publish one in Studio.'
-              : 'Loading value chain…'}
+            {!themeId && themes?.length === 0 ? t('noThemes') : t('loading')}
           </div>
         </div>
       )}

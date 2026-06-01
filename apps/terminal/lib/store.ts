@@ -21,6 +21,13 @@ interface CanvasState {
   hoveredId: string | null;
   hover: (id: string | null) => void;
 
+  // Product "neon laser": highlight the customers a chosen product flows into.
+  laser: { product: string; customers: string[] } | null;
+  setLaser: (l: { product: string; customers: string[] } | null) => void;
+
+  lang: 'en' | 'ko';
+  setLang: (l: 'en' | 'ko') => void;
+
   predict: boolean;
   togglePredict: () => void;
 }
@@ -39,10 +46,16 @@ export const useCanvas = create<CanvasState>((set) => ({
     })),
 
   selectedId: null,
-  select: (id) => set({ selectedId: id }),
+  select: (id) => set({ selectedId: id, laser: null }),
 
   hoveredId: null,
   hover: (id) => set({ hoveredId: id }),
+
+  laser: null,
+  setLaser: (l) => set({ laser: l }),
+
+  lang: 'en',
+  setLang: (l) => set({ lang: l }),
 
   predict: false,
   togglePredict: () => set((s) => ({ predict: !s.predict })),

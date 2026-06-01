@@ -7,6 +7,7 @@ import type { Vec3 } from '../lib/layout';
 import { useCanvas } from '../lib/store';
 import { Nodes } from './Nodes';
 import { Flows } from './Flows';
+import { Laser } from './Laser';
 
 export function Scene({
   nodes,
@@ -33,6 +34,7 @@ export function Scene({
       </mesh>
       <Nodes nodes={nodes} positions={positions} />
       <Flows edges={edges} positions={positions} />
+      <Laser positions={positions} />
       <OrbitControls makeDefault enablePan autoRotate autoRotateSpeed={0.22} minDistance={8} maxDistance={120} />
     </Canvas>
   );
