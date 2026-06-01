@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from . import __version__
 from .api import agent as agent_api
 from .api import editor as editor_api
+from .api import predict as predict_api
 from .api import publish as publish_api
 from .api import terminal as terminal_api
 from .api import themes as themes_api
@@ -47,6 +48,7 @@ app.include_router(tickets_api.router)
 app.include_router(editor_api.router)
 app.include_router(publish_api.router)
 app.include_router(terminal_api.router)
+app.include_router(predict_api.router)
 
 
 @app.get("/health")

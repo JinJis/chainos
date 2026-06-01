@@ -35,6 +35,9 @@ terminal: ## Run Terminal user app (http://localhost:3000)
 seed: ## Build + publish the AI Data Centers seed graph
 	cd services/engine && uv run python -m app.seed.load
 
+predict: ## Run the Predict scheduler (refreshes the momentum cache)
+	cd services/pipeline && uv run python -m app.scheduler
+
 lint: ## Lint everything
 	pnpm lint
 	cd services/engine && uv run ruff check app tests

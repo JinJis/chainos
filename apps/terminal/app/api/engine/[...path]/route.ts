@@ -25,3 +25,7 @@ async function forward(req: NextRequest, path: string[]): Promise<Response> {
 export async function GET(req: NextRequest, ctx: { params: { path: string[] } }) {
   return forward(req, ctx.params.path);
 }
+// Predict's cache-warm trigger is a POST; reads stay GET.
+export async function POST(req: NextRequest, ctx: { params: { path: string[] } }) {
+  return forward(req, ctx.params.path);
+}

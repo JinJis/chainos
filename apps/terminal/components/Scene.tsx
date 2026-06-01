@@ -2,21 +2,24 @@
 
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Stars } from '@react-three/drei';
-import type { CompanyNode, FlowEdge } from '../lib/api';
+import type { CompanyNode, FlowEdge, PredictPayload } from '../lib/api';
 import type { Vec3 } from '../lib/layout';
 import { useCanvas } from '../lib/store';
 import { Nodes } from './Nodes';
 import { Flows } from './Flows';
 import { Laser } from './Laser';
+import { GhostNodes } from './GhostNodes';
 
 export function Scene({
   nodes,
   positions,
   edges,
+  predict,
 }: {
   nodes: CompanyNode[];
   positions: Map<string, Vec3>;
   edges: FlowEdge[];
+  predict: PredictPayload | null;
 }) {
   const select = useCanvas((s) => s.select);
   return (
@@ -35,6 +38,7 @@ export function Scene({
       <Nodes nodes={nodes} positions={positions} />
       <Flows edges={edges} positions={positions} />
       <Laser positions={positions} />
+      {predict && <GhostNodes nodes={nodes} positions={positions} predict={predict} />}
       <OrbitControls makeDefault enablePan autoRotate autoRotateSpeed={0.22} minDistance={8} maxDistance={120} />
     </Canvas>
   );

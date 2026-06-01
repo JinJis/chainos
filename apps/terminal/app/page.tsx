@@ -10,12 +10,13 @@ import { useCanvas } from '../lib/store';
 import { useT } from '../lib/i18n';
 import { Hud } from '../components/Hud';
 import { Drawer } from '../components/Drawer';
+import { PredictTooltip } from '../components/PredictTooltip';
 
 // R3F cannot server-render; load the canvas client-only.
 const Scene = dynamic(() => import('../components/Scene').then((m) => m.Scene), { ssr: false });
 
 export default function TerminalPage() {
-  const { themeId, setThemeId, depth, views } = useCanvas();
+  const { themeId, setThemeId, depth, views, predict: predictOn } = useCanvas();
   const t = useT();
 
   const { data: themes } = useQuery({ queryKey: ['themes'], queryFn: api.themes });
@@ -55,11 +56,24 @@ export default function TerminalPage() {
 
   const theme = themes?.find((t) => t.id === themeId) ?? null;
 
+  // Predict overlay: warm + poll the momentum cache only while Predict is ON.
+  const { data: predict } = useQuery({
+    queryKey: ['predict', themeId],
+    queryFn: () => api.runPredict(themeId!),
+    enabled: !!themeId && predictOn,
+    refetchInterval: 15_000,
+  });
+
   return (
     <main>
       {graph && (
         <div className="canvas-root">
-          <Scene nodes={graph.nodes} positions={positions} edges={visibleEdges} />
+          <Scene
+            nodes={graph.nodes}
+            positions={positions}
+            edges={visibleEdges}
+            predict={predictOn ? (predict ?? null) : null}
+          />
         </div>
       )}
       <Hud
@@ -69,6 +83,7 @@ export default function TerminalPage() {
         visibleCount={visibleCount}
       />
       <Drawer />
+      <PredictTooltip predict={predictOn ? (predict ?? null) : null} />
       {(isLoading || !themeId) && (
         <div
           className="hud"

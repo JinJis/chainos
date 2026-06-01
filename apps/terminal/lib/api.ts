@@ -51,6 +51,23 @@ export interface CompanyDetail {
   customers: { id: string; name: string; edge: FlowEdge }[];
 }
 
+export interface PredictNode {
+  name: string;
+  momentum: number;
+  expansion_ratio: number;
+  expected_delta_pct: number;
+  direction: 'expand' | 'contract' | 'flat';
+  evidence: { headline: string; source: string; reason: string; polarity: number }[];
+  engine: string;
+}
+
+export interface PredictPayload {
+  theme_id: string;
+  news_count: number;
+  links: number;
+  nodes: Record<string, PredictNode>;
+}
+
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) throw new Error(`${res.status}`);
   return res.json() as Promise<T>;
@@ -64,4 +81,11 @@ export const api = {
     fetch(`${BASE}/terminal/companies/${themeId}/${companyId}`).then((r) =>
       json<CompanyDetail>(r),
     ),
+  // Predict: ensure the cache is warm, then read the momentum overlay.
+  runPredict: (themeId: string) =>
+    fetch(`${BASE}/predict/${themeId}/run`, { method: 'POST' }).then((r) =>
+      json<PredictPayload>(r),
+    ),
+  predict: (themeId: string) =>
+    fetch(`${BASE}/predict/${themeId}`).then((r) => json<PredictPayload>(r)),
 };
