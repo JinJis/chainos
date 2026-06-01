@@ -1,0 +1,15 @@
+# Keep the build context small + reproducible.
+**/node_modules
+**/.next
+**/dist
+**/.turbo
+**/.venv
+**/__pycache__
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+.git
+infra/.data
+**/*.log
+.env
+.env.local

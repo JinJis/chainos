@@ -1,18 +1,27 @@
 # Chainos developer commands. See CLAUDE.md §8.
 COMPOSE := docker compose -f infra/docker-compose.yml
 
-.PHONY: help up down logs install engine studio terminal seed lint typecheck test fmt schema
+.PHONY: help up down logs install engine studio terminal seed predict lint typecheck test fmt schema docker-up docker-down docker-logs
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
 
-up: ## Start neo4j/postgres/redis
+docker-up: ## Build + run the ENTIRE stack in Docker (Engine/Studio/Terminal/pipeline/seed)
+	docker compose up --build -d
+
+docker-down: ## Stop the full Docker stack
+	docker compose down
+
+docker-logs: ## Tail the full Docker stack logs
+	docker compose logs -f
+
+up: ## Start datastores only (neo4j/postgres/redis), for host dev
 	$(COMPOSE) up -d
 
-down: ## Stop infra
+down: ## Stop datastores
 	$(COMPOSE) down
 
-logs: ## Tail infra logs
+logs: ## Tail datastore logs
 	$(COMPOSE) logs -f
 
 install: ## Install JS + Python deps

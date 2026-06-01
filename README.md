@@ -31,21 +31,45 @@ number carries `source_id` + `base_date` + `next_update`; **LLM keys are server-
 | `packages/ui` | Shared design tokens |
 | `infra` | docker-compose (neo4j/postgres/redis), db init, seed |
 
-## Quickstart
+## Quickstart — one command (Docker)
+
+Runs the **entire** stack (datastores + Engine + Studio + Terminal + Predict scheduler) and
+auto-publishes the AI Data Centers seed:
 
 ```bash
-make up          # neo4j + postgres + redis
+docker compose up --build -d
+```
+
+Then open:
+
+| URL | What |
+|---|---|
+| http://localhost:3000 | **Terminal** — the 3D value-chain canvas |
+| http://localhost:3001 | **Studio** — admin data factory |
+| http://localhost:8000/health | **Engine** API |
+
+Watch the seed publish: `docker compose logs -f seed`. Stop everything: `docker compose down`
+(add `-v`-equivalent `rm -rf infra/.data` to wipe data). `make docker-up` / `make docker-down`
+wrap these.
+
+> No LLM keys needed — the Engine runs deterministic/**offline** and the seed + demo still work.
+> For live model calls, create a `.env` with `ANTHROPIC_API_KEY` / `GOOGLE_API_KEY`; Compose passes
+> them through. Keys stay server-side (the browser only talks to each app's same-origin proxy).
+
+## Alternative — host dev (hot reload)
+
+```bash
+make up          # just the datastores (neo4j + postgres + redis)
 make install     # pnpm install + uv sync (engine, pipeline)
 make schema      # generate the Python graph-schema mirror from the TS spec
-make engine      # Engine API at http://localhost:8000  (GET /health)
+make engine      # Engine API at http://localhost:8000
 make seed        # build + publish the AI Data Centers seed graph
 make terminal    # Terminal at http://localhost:3000
 make studio      # Studio at http://localhost:3001
 ```
 
-No LLM keys? The Engine boots in **offline** mode (`LLM_OFFLINE=1` or simply no key set) using a
-deterministic provider, so the seed graph and Terminal demo still run. Add `ANTHROPIC_API_KEY` /
-`GOOGLE_API_KEY` to `.env` for live model calls.
+> `docker-compose.yml` (full stack) and `infra/docker-compose.yml` (datastores only) share the same
+> container names + data volume, so run one or the other — not both at once.
 
 ## Quality gates
 
