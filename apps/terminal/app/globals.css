@@ -1,0 +1,78 @@
+:root {
+  --bg: #05070d;
+  --panel: rgba(11, 15, 26, 0.82);
+  --border: #1d2640;
+  --text: #e6ecff;
+  --dim: #8a96b8;
+  --accent: #4da3ff;
+  --gold: #ffcc66;
+  --neon: #46f0c8;
+  --ok: #46d18a;
+  --danger: #ff5d6c;
+}
+
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  overflow: hidden;
+}
+
+.canvas-root {
+  position: fixed;
+  inset: 0;
+}
+
+.hud {
+  position: fixed;
+  z-index: 10;
+  pointer-events: none;
+}
+.hud * {
+  pointer-events: auto;
+}
+
+.glass {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  backdrop-filter: blur(8px);
+}
+
+.mono {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+}
+.dim {
+  color: var(--dim);
+}
+
+button.toggle {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--dim);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+button.toggle.on {
+  color: #04101f;
+  background: var(--accent);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+input[type='range'] {
+  accent-color: var(--accent);
+}
+
+.disclaimer {
+  font-size: 11px;
+  color: var(--dim);
+}
