@@ -10,13 +10,22 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from . import __version__
+from .api import agent as agent_api
+from .api import themes as themes_api
+from .api import tickets as tickets_api
 from .config import get_settings
 from .llm import Tier, get_router
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Datastore connections are opened lazily by their repositories.
+    # Best-effort table creation so the API is usable immediately in dev.
+    try:
+        from .db.init import init_db
+
+        init_db()
+    except Exception:  # noqa: BLE001 — Postgres may not be up yet; routes still import
+        pass
     yield
 
 
@@ -28,6 +37,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(themes_api.router)
+app.include_router(agent_api.router)
+app.include_router(tickets_api.router)
 
 
 @app.get("/health")
