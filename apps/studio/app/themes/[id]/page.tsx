@@ -6,6 +6,7 @@ import { useRef, useState } from 'react';
 import { api, runAgent, type AgentEvent, type ParsePreview, type Ticket } from '../../../lib/api';
 import { VerifyPanel } from '../../../components/VerifyPanel';
 import { FlowsEditor } from '../../../components/FlowsEditor';
+import { PublishPanel } from '../../../components/PublishPanel';
 
 const KIND_COLOR: Record<string, string> = {
   start: 'var(--dim)',
@@ -130,6 +131,8 @@ export default function ThemeConsole({ params }: { params: { id: string } }) {
         <VerifyPanel themeId={themeId} />
         <FlowsEditor themeId={themeId} />
       </div>
+
+      <PublishPanel themeId={themeId} />
     </div>
   );
 }

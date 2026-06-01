@@ -74,6 +74,24 @@ export interface GraphPayload {
   edges: GraphEdge[];
 }
 
+export interface PublishDiff {
+  staging_counts: { nodes: number; edges: number };
+  production_counts: { nodes: number; edges: number };
+  added_nodes: string[];
+  removed_nodes: string[];
+  added_edges: number;
+  removed_edges: number;
+}
+
+export class PublishError extends Error {
+  constructor(
+    public status: number,
+    public detail: unknown,
+  ) {
+    super('publish failed');
+  }
+}
+
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
   return res.json() as Promise<T>;
@@ -113,6 +131,14 @@ export const api = {
     }).then((r) => json(r)),
   validate: (themeId: string) =>
     fetch(`${BASE}/themes/${themeId}/validate`).then((r) => json<ValidationReport>(r)),
+  publishDiff: (themeId: string) =>
+    fetch(`${BASE}/themes/${themeId}/publish/diff`).then((r) => json<PublishDiff>(r)),
+  publish: async (themeId: string) => {
+    const res = await fetch(`${BASE}/themes/${themeId}/publish`, { method: 'POST' });
+    const body = await res.json();
+    if (!res.ok) throw new PublishError(res.status, body?.detail ?? body);
+    return body as { status: string; version: number; production_counts: { nodes: number } };
+  },
   stagingGraph: (themeId: string, views?: string[]) => {
     const q = views?.length ? `?${views.map((v) => `views=${v}`).join('&')}` : '';
     return fetch(`${BASE}/themes/${themeId}/staging-graph${q}`).then((r) => json<GraphPayload>(r));

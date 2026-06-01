@@ -277,6 +277,57 @@ class GraphRepo:
             ],
         }
 
+    # ── atomic snapshot replace (publish, M3) ─────────────────────────────────
+    def replace_theme(
+        self, theme_id: str, nodes: list[dict[str, Any]], edges: list[dict[str, Any]]
+    ) -> dict[str, int]:
+        """Atomically swap this track's subgraph for `theme_id`: delete then rebuild
+        in a SINGLE transaction. Used by Publish to snapshot Staging → Production
+        with no partially-visible intermediate state (PRD §4 invariant)."""
+        with self._driver.session() as s, s.begin_transaction() as tx:
+            tx.run(
+                "MATCH (n {_theme: $theme, _track: $track}) DETACH DELETE n",
+                theme=theme_id,
+                track=self.track,
+            )
+            for node in nodes:
+                label = node.get("label")
+                if label not in _NODE_LABELS:
+                    raise ValueError(f"Unknown node label: {label!r}")
+                props = {k: v for k, v in node.items() if v is not None}
+                uid = self._uid(theme_id, node["id"])
+                tx.run(
+                    f"MERGE (n:`{label}` {{_uid: $uid}}) "
+                    "SET n += $props, n._uid = $uid, n._track = $track, n._theme = $theme",
+                    uid=uid,
+                    props=props,
+                    track=self.track,
+                    theme=theme_id,
+                )
+            for edge in edges:
+                etype = edge.get("type")
+                if etype not in _EDGE_TYPES:
+                    raise ValueError(f"Unknown edge type: {etype!r}")
+                props = {
+                    k: v for k, v in edge.items() if k not in ("type", "from", "to") and v is not None
+                }
+                tx.run(
+                    "MATCH (a {_uid: $from_uid}), (b {_uid: $to_uid}) "
+                    f"MERGE (a)-[r:`{etype}` {{_ekey: $ekey}}]->(b) "
+                    "SET r += $props, r._track = $track, r._theme = $theme, "
+                    "r.`from` = $from_id, r.to = $to_id",
+                    from_uid=self._uid(theme_id, edge["from"]),
+                    to_uid=self._uid(theme_id, edge["to"]),
+                    ekey=self._ekey(theme_id, edge),
+                    props=props,
+                    track=self.track,
+                    theme=theme_id,
+                    from_id=edge["from"],
+                    to_id=edge["to"],
+                )
+            tx.commit()
+        return self.count(theme_id)
+
     # ── publish support (M3) ──────────────────────────────────────────────────
     def export_theme(self, theme_id: str) -> dict[str, list[dict[str, Any]]]:
         """Full dump including Source nodes + SOURCED_FROM, used by publish."""
