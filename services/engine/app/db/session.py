@@ -10,11 +10,18 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from ..config import get_settings
+from ..logging_config import get_logger
+
+log = get_logger("db")
 
 
 @lru_cache
 def get_engine() -> Engine:
-    return create_engine(get_settings().database_url, pool_pre_ping=True, future=True)
+    url = get_settings().database_url
+    # Redact credentials before logging the DSN.
+    safe = url.split("@")[-1] if "@" in url else url
+    log.info("creating SQLAlchemy engine", extra={"target": safe})
+    return create_engine(url, pool_pre_ping=True, future=True)
 
 
 @lru_cache
@@ -33,8 +40,13 @@ def session_scope() -> Iterator[Session]:
     try:
         yield session
         session.commit()
-    except Exception:
+    except Exception as exc:
         session.rollback()
+        # HTTPException (404 etc.) is expected control flow; log real DB errors loudly.
+        if exc.__class__.__name__ == "HTTPException":
+            log.debug("session rollback (handled)", extra={"reason": str(exc)})
+        else:
+            log.exception("session rollback (db error)")
         raise
     finally:
         session.close()

@@ -20,6 +20,21 @@ from datetime import UTC, datetime
 # `logger.info(..., extra={...})`) is rendered as structured context.
 _RESERVED = set(logging.makeLogRecord({}).__dict__) | {"message", "asctime", "taskName"}
 
+
+class _SafeLogger(logging.Logger):
+    """A Logger that won't crash a request when an `extra={...}` key collides with
+    a reserved LogRecord attribute (e.g. `name`, `module`). Colliding keys are
+    transparently prefixed with `x_` instead of raising KeyError."""
+
+    def makeRecord(self, name, level, fn, lno, msg, args, exc_info, func=None, extra=None, sinfo=None):  # type: ignore[override]
+        if extra:
+            extra = {(f"x_{k}" if k in _RESERVED else k): v for k, v in extra.items()}
+        return super().makeRecord(name, level, fn, lno, msg, args, exc_info, func, extra, sinfo)
+
+
+# Apply before any chainos.* logger is created so they all get the safe behavior.
+logging.setLoggerClass(_SafeLogger)
+
 # Chatty third-party loggers — capped so app logs stay readable even at DEBUG.
 _NOISY = (
     "neo4j",

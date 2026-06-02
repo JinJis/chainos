@@ -53,3 +53,16 @@ def test_configure_logging_sets_level_and_namespace() -> None:
     # third-party noise stays capped even at DEBUG
     assert logging.getLogger("neo4j").level >= logging.INFO
     configure_logging("INFO", "text")  # restore
+
+
+def test_reserved_extra_keys_do_not_crash() -> None:
+    """`extra={'name': ...}` would raise KeyError on a plain Logger; the SafeLogger
+    renames collisions to x_<key> instead of crashing the request."""
+    logger = get_logger("test.safe")
+    logger.setLevel(logging.INFO)
+    # Must not raise.
+    logger.info("collision", extra={"name": "x", "module": "y", "theme_id": "t1"})
+    rec = logging.LogRecord("chainos.test", logging.INFO, __file__, 1, "m", None, None)
+    rec.__dict__["x_name"] = "x"
+    out = TextFormatter().format(rec)
+    assert "x_name=x" in out

@@ -11,9 +11,11 @@ from sqlalchemy import select
 from ..db import session_scope
 from ..graph import ProductionGraphRepo
 from ..graph_schema import FLOW_VIEW_EDGES
+from ..logging_config import get_logger
 from ..models import Theme
 
 router = APIRouter(prefix="/terminal", tags=["terminal"])
+log = get_logger("api.terminal")
 
 # Company↔company flows that the macro canvas can render.
 _MACRO_EDGE_TYPES = ["SUPPLIES", "REVENUE_FLOW", "INVESTS_IN", "COMPETES_WITH"]
@@ -26,6 +28,7 @@ def published_themes() -> list[dict]:
         themes = s.scalars(
             select(Theme).where(Theme.status == "published").order_by(Theme.name)
         ).all()
+        log.debug("published themes", extra={"count": len(themes)})
         return [
             {"id": t.id, "name": t.name, "version": t.version, "depth_max": t.depth_max}
             for t in themes
@@ -49,6 +52,13 @@ def macro_graph(
     graph = repo.get_graph(
         theme_id, depth=depth, edge_types=edge_types, labels=["Company"]
     )
+    log.debug(
+        "macro graph",
+        extra={"theme_id": theme_id, "depth": depth, "views": views,
+               "nodes": len(graph["nodes"]), "edges": len(graph["edges"])},
+    )
+    if not graph["nodes"]:
+        log.info("macro graph empty (theme not published?)", extra={"theme_id": theme_id})
     return graph
 
 
@@ -57,5 +67,10 @@ def company_detail(theme_id: str, company_id: str) -> dict:
     """Micro view (drill-down): divisions → products + key customers. Production only."""
     detail = ProductionGraphRepo().get_company_detail(theme_id, company_id)
     if detail is None:
+        log.warning("company not found in production",
+                    extra={"theme_id": theme_id, "company_id": company_id})
         raise HTTPException(404, "company not found in production")
+    log.debug("company detail", extra={"theme_id": theme_id, "company_id": company_id,
+                                       "divisions": len(detail["divisions"]),
+                                       "customers": len(detail["customers"])})
     return detail

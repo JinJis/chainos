@@ -9,8 +9,11 @@ from typing import Any
 from ..config import get_settings
 from ..graph import ProductionGraphRepo
 from ..llm import Provider, Tier, get_router
+from ..logging_config import get_logger
 from . import momentum as m
 from .cache import read_momentum, write_momentum
+
+log = get_logger("predict")
 
 # Entity-link confidence floor: contributions to unknown nodes are dropped.
 RELEVANCE_FLOOR = 0.0
@@ -43,6 +46,10 @@ def compute_and_cache(theme_id: str, news: list[dict[str, Any]]) -> dict[str, An
     node_ids = {n["id"] for n in nodes}
     names = {n["id"]: n.get("name", n["id"]) for n in nodes}
     aliases = _alias_map(nodes)
+    log.info("compute momentum", extra={"theme_id": theme_id, "nodes": len(node_ids),
+                                        "news": len(news)})
+    if not node_ids:
+        log.warning("predict on empty/unpublished theme", extra={"theme_id": theme_id})
 
     # LOW-tier model id powering the analysis (shown in the tooltip).
     engine_label = get_router().model_id(Tier.LOW, Provider(get_settings().llm_default_provider))
@@ -55,7 +62,9 @@ def compute_and_cache(theme_id: str, news: list[dict[str, Any]]) -> dict[str, An
         for impact in item.get("impacts", []):
             node_id = _link(str(impact["entity"]), node_ids, aliases)
             if node_id is None:
-                continue  # entity-linking threshold: unmatched → excluded from Predict
+                # entity-linking threshold: unmatched → excluded from Predict
+                log.debug("entity unlinked", extra={"entity": impact.get("entity")})
+                continue
             linked += 1
             polarity = float(impact.get("polarity", 0.0))
             contribution = polarity * weight * decay
@@ -92,9 +101,14 @@ def compute_and_cache(theme_id: str, news: list[dict[str, Any]]) -> dict[str, An
         "nodes": out_nodes,
     }
     write_momentum(theme_id, payload)
+    log.info("momentum cached", extra={"theme_id": theme_id, "links": linked,
+                                       "scored_nodes": len(out_nodes)})
     return payload
 
 
 def load_momentum(theme_id: str) -> dict[str, Any]:
     cached = read_momentum(theme_id)
-    return cached or {"theme_id": theme_id, "news_count": 0, "links": 0, "nodes": {}}
+    if cached is None:
+        log.debug("momentum cache miss", extra={"theme_id": theme_id})
+        return {"theme_id": theme_id, "news_count": 0, "links": 0, "nodes": {}}
+    return cached

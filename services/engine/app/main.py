@@ -7,8 +7,14 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, Request
+from fastapi.exception_handlers import (
+    http_exception_handler,
+    request_validation_exception_handler,
+)
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import __version__
 from .api import agent as agent_api
@@ -65,6 +71,7 @@ app.add_middleware(
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     start = time.perf_counter()
+    log.debug("→ request", extra={"method": request.method, "path": request.url.path})
     try:
         response = await call_next(request)
     except Exception:
@@ -74,18 +81,48 @@ async def log_requests(request: Request, call_next):
         )
         raise
     duration_ms = round((time.perf_counter() - start) * 1000, 1)
-    # /health is polled by Docker; keep it at DEBUG so it doesn't spam INFO.
-    emit = log.debug if request.url.path == "/health" else log.info
+    status = response.status_code
+    # /health is polled by Docker (DEBUG); 4xx → WARNING, 5xx → ERROR so failures stand out.
+    if request.url.path == "/health":
+        emit = log.debug
+    elif status >= 500:
+        emit = log.error
+    elif status >= 400:
+        emit = log.warning
+    else:
+        emit = log.info
     emit(
-        "request",
+        "← response",
+        extra={"method": request.method, "path": request.url.path, "status": status, "ms": duration_ms},
+    )
+    return response
+
+
+@app.exception_handler(StarletteHTTPException)
+async def _log_http_exception(request: Request, exc: StarletteHTTPException):
+    """Log the REASON behind every 4xx/5xx (e.g. 'theme not found') so the cause
+    of a failing request is visible, not just the status code."""
+    emit = log.error if exc.status_code >= 500 else log.warning
+    emit(
+        "http error",
         extra={
             "method": request.method,
             "path": request.url.path,
-            "status": response.status_code,
-            "ms": duration_ms,
+            "status": exc.status_code,
+            "detail": exc.detail,
         },
     )
-    return response
+    return await http_exception_handler(request, exc)
+
+
+@app.exception_handler(RequestValidationError)
+async def _log_validation_error(request: Request, exc: RequestValidationError):
+    log.warning(
+        "request validation failed",
+        extra={"method": request.method, "path": request.url.path, "errors": exc.errors()},
+    )
+    return await request_validation_exception_handler(request, exc)
+
 
 app.include_router(themes_api.router)
 app.include_router(agent_api.router)

@@ -64,9 +64,11 @@ class _SSELogHandler(logging.Handler):
 async def run_theme_agent(theme_id: str) -> StreamingResponse:
     """Run the multi-LLM agent loop and stream its thinking trace as SSE.
     Persists every event (replayable) and the Need-Fact tickets it raises."""
+    log.info("run agent requested", extra={"theme_id": theme_id})
     with session_scope() as s:
         theme = s.get(Theme, theme_id)
         if theme is None:
+            log.warning("run agent: theme not found", extra={"theme_id": theme_id})
             raise HTTPException(404, "theme not found")
         theme.status = "building"
         job = Job(theme_id=theme_id, kind="agent_run", status="running")
@@ -140,6 +142,7 @@ def job_events(job_id: str) -> list[JobEventOut]:
         events = s.scalars(
             select(JobEvent).where(JobEvent.job_id == job_id).order_by(JobEvent.seq)
         ).all()
+        log.debug("job events", extra={"job_id": job_id, "count": len(events)})
         return [JobEventOut.model_validate(e) for e in events]
 
 
@@ -153,4 +156,10 @@ def staging_graph(
     edge_types: list[str] | None = None
     if views:
         edge_types = sorted({et for v in views for et in FLOW_VIEW_EDGES.get(v, [])})
-    return StagingGraphRepo().get_graph(theme_id, depth=depth, edge_types=edge_types)
+    graph = StagingGraphRepo().get_graph(theme_id, depth=depth, edge_types=edge_types)
+    log.debug(
+        "staging graph",
+        extra={"theme_id": theme_id, "depth": depth,
+               "nodes": len(graph["nodes"]), "edges": len(graph["edges"])},
+    )
+    return graph
