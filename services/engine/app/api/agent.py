@@ -33,12 +33,24 @@ def _sse(payload: dict) -> str:
     return f"data: {json.dumps(payload)}\n\n"
 
 
+# Only these loggers reach the Studio console — the agent's own reasoning (LLM
+# prompts/responses, graph writes, publish). API request logs (health checks, Studio
+# polling) and DB connection noise are intentionally excluded.
+_CONSOLE_LOGGERS = (
+    "chainos.agent",
+    "chainos.llm",
+    "chainos.graph",
+    "chainos.publish",
+    "chainos.predict",
+)
+
+
 class _SSELogHandler(logging.Handler):
-    """Buffers `chainos.*` log records during an agent run so the run endpoint can
-    drain them into the SSE stream — surfacing the Engine's debug/error logging
-    directly in the Studio console. Records are filtered by the chainos logger's
-    own level (DEBUG when LOG_LEVEL=DEBUG), so verbosity follows .env. Thread-safe:
-    records are produced on the agent worker thread, drained on the event loop."""
+    """Buffers agent-related `chainos.*` log records during a run so the run endpoint
+    can drain them into the SSE stream — surfacing the Engine's reasoning/debug
+    logging directly in the Studio console. Records are filtered by the chainos
+    logger's own level (DEBUG when LOG_LEVEL=DEBUG), so verbosity follows .env.
+    Thread-safe: produced on the worker thread, drained on the event loop."""
 
     def __init__(self) -> None:
         super().__init__(level=logging.NOTSET)
@@ -46,6 +58,8 @@ class _SSELogHandler(logging.Handler):
         self._lock = threading.Lock()
 
     def emit(self, record: logging.LogRecord) -> None:
+        if not record.name.startswith(_CONSOLE_LOGGERS):
+            return  # skip request/health/db plumbing — keep the console to agent logs
         try:
             message = record.getMessage()
             extras = _extras(record)

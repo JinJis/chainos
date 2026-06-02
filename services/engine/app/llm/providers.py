@@ -219,30 +219,36 @@ class GoogleProvider:
     def _run_interactions(
         self, client: Any, agent_id: str, brief: str, on_event: ResearchCallback, timeout_s: int
     ) -> ProviderResult:
+        """Stream the Deep Research interaction live (thought summaries + report text),
+        reconnecting by interaction_id + last_event_id if the stream drops — exactly
+        the pattern from the Gemini Deep Research streaming docs."""
         import time as _time
 
         config = {
             "type": "deep-research",
-            "thinking_summaries": "auto",
+            "thinking_summaries": "auto",  # required to receive intermediate thoughts
             "collaborative_planning": False,  # approve + start research immediately
         }
         state: dict[str, Any] = {"id": None, "last_event": None, "done": False}
         report_parts: list[str] = []
 
-        def handle(stream: Any) -> None:
+        def process_stream(stream: Any) -> None:
             for event in stream:
                 etype = getattr(event, "event_type", None)
                 if etype == "interaction.created":
-                    state["id"] = event.interaction.id
+                    state["id"] = getattr(event.interaction, "id", None)
                 if getattr(event, "event_id", None):
                     state["last_event"] = event.event_id
                 if etype == "step.delta":
-                    delta = event.delta
+                    delta = getattr(event, "delta", None)
                     dtype = getattr(delta, "type", None)
-                    if dtype == "thought":
+                    if dtype == "text":  # part of the final report, streamed live
+                        chunk = getattr(delta, "text", "") or ""
+                        report_parts.append(chunk)
+                        on_event("text", chunk)
+                    elif dtype == "thought":  # intermediate reasoning step
                         on_event("thought", getattr(delta, "text", "") or "")
-                    elif dtype == "text":
-                        report_parts.append(getattr(delta, "text", "") or "")
+                    # "image" deltas are ignored for now
                 elif etype in ("interaction.completed", "error"):
                     state["done"] = True
 
@@ -255,29 +261,31 @@ class GoogleProvider:
             stream=True,
             agent_config=config,
         )
-        handle(stream)
+        process_stream(stream)
 
+        # The streaming connection can drop/expire on long tasks — poll status and
+        # reconnect from the last event until the interaction finishes.
         deadline = _time.monotonic() + timeout_s
         while not state["done"] and state["id"] and _time.monotonic() < deadline:
             status = client.interactions.get(state["id"])
             st = getattr(status, "status", None)
-            if st in ("completed", "failed"):
+            if st != "in_progress":
                 if st == "failed":
                     on_event("status", f"Deep Research failed: {getattr(status, 'error', '')}")
                 if not report_parts and getattr(status, "output_text", None):
                     report_parts.append(status.output_text)
                 break
-            if st != "in_progress":
-                break
+            on_event("status", "reconnecting to research stream…")
             stream = client.interactions.get(
                 id=state["id"], stream=True, last_event_id=state["last_event"]
             )
-            handle(stream)
+            process_stream(stream)
 
         report = "".join(report_parts).strip()
         if not report and state["id"]:
             final = client.interactions.get(state["id"])
             report = getattr(final, "output_text", "") or ""
+        on_event("status", f"Deep Research complete — {len(report)} chars")
         return ProviderResult(text=report, model=agent_id)
 
     def _grounded_research(self, brief: str, on_event: ResearchCallback) -> ProviderResult:

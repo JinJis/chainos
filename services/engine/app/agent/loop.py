@@ -440,13 +440,22 @@ def run_agent(
     )
 
     # ── RESEARCH (streaming) ──────────────────────────────────────────────────
+    # Stream the Deep Research agent's thought summaries live, plus a lightweight
+    # "drafting report" progress as the final report text streams in.
+    text_progress = {"chars": 0, "emitted": 0}
+
     def on_research(kind: str, text: str) -> None:
         if not text:
             return
         if kind == "thought":
             logger.debug("research thought: %s", text)
-            ev("research", f"🔍 {text}", ephemeral=True)
-        else:
+            ev("research", f"🔍 {text.strip()}", ephemeral=True)
+        elif kind == "text":
+            text_progress["chars"] += len(text)
+            if text_progress["chars"] - text_progress["emitted"] >= 600:
+                text_progress["emitted"] = text_progress["chars"]
+                ev("research", f"📝 drafting report… {text_progress['chars']} chars", ephemeral=True)
+        else:  # status
             logger.info("research: %s", text)
             ev("research", f"· {text}")
 
