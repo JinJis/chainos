@@ -24,6 +24,10 @@ from ..schemas import JobEventOut
 router = APIRouter(tags=["agent"])
 log = get_logger("api.agent")
 
+# Send an SSE keep-alive comment if no agent event arrives within this window, so
+# the Studio proxy (undici) doesn't abort the stream during a long research step.
+_HEARTBEAT_S = 15.0
+
 
 def _sse(payload: dict) -> str:
     return f"data: {json.dumps(payload)}\n\n"
@@ -111,6 +115,7 @@ async def run_theme_agent(theme_id: str) -> StreamingResponse:
                     emit=emit,
                 )
             except Exception as exc:  # safety net — run_agent emits its own errors too
+                log.exception("agent worker crashed", extra={"job_id": job_id, "theme_id": theme_id})
                 loop.call_soon_threadsafe(
                     queue.put_nowait,
                     AgentEvent(-1, "error", f"{type(exc).__name__}: {exc}"),
@@ -123,7 +128,15 @@ async def run_theme_agent(theme_id: str) -> StreamingResponse:
         try:
             yield _sse({"kind": "job", "job_id": job_id, "message": f"job {job_id} started"})
             while True:
-                ev = await queue.get()
+                # Heartbeat: if no event arrives within the window, send an SSE comment
+                # so the Studio proxy's body timeout never fires during long research.
+                try:
+                    ev = await asyncio.wait_for(queue.get(), timeout=_HEARTBEAT_S)
+                except TimeoutError:
+                    for entry in capture.drain():
+                        yield _sse(entry)
+                    yield ": keepalive\n\n"
+                    continue
                 # Flush any engine log lines produced while this step ran.
                 for entry in capture.drain():
                     yield _sse(entry)

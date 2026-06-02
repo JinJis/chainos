@@ -9,6 +9,9 @@ from collections.abc import Callable
 from typing import Any, Protocol
 
 from ..config import Settings
+from ..logging_config import get_logger
+
+log = get_logger("llm.provider")
 
 # Callback for streaming research progress: (kind, text) where kind is
 # "thought" (agent reasoning) or "status" (pipeline note).
@@ -95,27 +98,34 @@ class AnthropicProvider:
     ) -> ProviderResult:
         """Claude-driven web research using the server-side web_search tool. Falls
         back to plain reasoning if the tool isn't enabled for the account."""
-        client = self._get_client()
         model = self._settings.model_deep_anthropic
         on_event("status", f"web research via {model} + web_search tool")
         try:
-            resp = client.messages.create(
-                model=model,
-                max_tokens=8192,
-                tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 10}],
-                messages=[{"role": "user", "content": brief}],
-            )
-            text = "".join(
-                b.text for b in resp.content if getattr(b, "type", None) == "text"
-            )
-            return ProviderResult(text=text, model=f"{model}+web_search")
-        except Exception as exc:  # noqa: BLE001
-            on_event("status", f"web_search tool unavailable ({exc}); plain reasoning")
+            client = self._get_client()
+            try:
+                resp = client.messages.create(
+                    model=model,
+                    max_tokens=8192,
+                    tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 10}],
+                    messages=[{"role": "user", "content": brief}],
+                )
+                text = "".join(
+                    b.text for b in resp.content if getattr(b, "type", None) == "text"
+                )
+                if text.strip():
+                    return ProviderResult(text=text, model=f"{model}+web_search")
+            except Exception as exc:  # noqa: BLE001
+                log.warning("web_search tool failed", exc_info=True)
+                on_event("status", f"web_search tool unavailable ({exc}); plain reasoning")
             resp = client.messages.create(
                 model=model, max_tokens=8192, messages=[{"role": "user", "content": brief}]
             )
             text = "".join(b.text for b in resp.content if getattr(b, "type", None) == "text")
             return ProviderResult(text=text, model=model)
+        except Exception as exc:  # noqa: BLE001 — never crash the run
+            log.warning("anthropic research unavailable", exc_info=True)
+            on_event("status", f"research unavailable ({type(exc).__name__}: {exc})")
+            return ProviderResult(text="", model="research-failed")
 
 
 class GoogleProvider:
@@ -171,25 +181,40 @@ class GoogleProvider:
         timeout_s: int = 900,
     ) -> ProviderResult:
         """Run the Gemini Deep Research agent (web-grounded, multi-step) and stream
-        its thoughts via `on_event`. Falls back to google_search-grounded generation
-        if the preview interactions API isn't available in this SDK build."""
-        client = self._get_client()
-        agent_id = self._settings.model_research_google
-        if max_mode and "max" not in agent_id:
-            agent_id = agent_id.replace("deep-research-preview", "deep-research-max-preview")
+        its thoughts via `on_event`. NEVER raises — degrades to google_search-grounded
+        generation, then to empty, so a research hiccup can't crash the agent run."""
+        try:
+            client = self._get_client()
+            agent_id = self._settings.model_research_google
+            if max_mode and "max" not in agent_id:
+                agent_id = agent_id.replace("deep-research-preview", "deep-research-max-preview")
 
-        if getattr(client, "interactions", None) is not None:
-            try:
-                return self._run_interactions(client, agent_id, brief, on_event, timeout_s)
-            except Exception as exc:  # noqa: BLE001
+            if getattr(client, "interactions", None) is not None:
+                try:
+                    result = self._run_interactions(client, agent_id, brief, on_event, timeout_s)
+                    if result.text.strip():
+                        return result
+                    on_event("status", "Deep Research returned no text; using google_search grounding")
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("Deep Research interactions failed", exc_info=True)
+                    on_event(
+                        "status",
+                        f"Deep Research API failed ({type(exc).__name__}: {exc}); "
+                        "falling back to google_search grounding",
+                    )
+            else:
                 on_event(
-                    "status",
-                    f"Deep Research API failed ({type(exc).__name__}: {exc}); "
-                    "falling back to google_search grounding",
+                    "status", "Deep Research API not in this SDK build; using google_search grounding"
                 )
-        else:
-            on_event("status", "Deep Research API not in this SDK build; using google_search grounding")
-        return self._grounded_research(brief, on_event)
+            return self._grounded_research(brief, on_event)
+        except Exception as exc:  # noqa: BLE001 — last-resort guard
+            log.warning("research unavailable", exc_info=True)
+            on_event(
+                "status",
+                f"research unavailable ({type(exc).__name__}: {exc}); "
+                "proceeding with a derived skeleton",
+            )
+            return ProviderResult(text="", model="research-failed")
 
     def _run_interactions(
         self, client: Any, agent_id: str, brief: str, on_event: ResearchCallback, timeout_s: int
@@ -268,15 +293,23 @@ class GoogleProvider:
                 max_output_tokens=8192,
             )
             resp = client.models.generate_content(model=model, contents=brief, config=cfg)
-            return ProviderResult(text=resp.text or "", model=f"{model}+google_search")
+            if (resp.text or "").strip():
+                return ProviderResult(text=resp.text or "", model=f"{model}+google_search")
         except Exception as exc:  # noqa: BLE001
-            on_event("status", f"google_search grounding unavailable ({exc}); plain generation")
+            log.warning("google_search grounding failed", exc_info=True)
+            on_event("status", f"google_search grounding failed ({exc}); plain generation")
+        # Last resort: plain generation (no tools).
+        try:
             resp = client.models.generate_content(
                 model=model,
                 contents=brief,
                 config=gt.GenerateContentConfig(temperature=0.4, max_output_tokens=8192),
             )
             return ProviderResult(text=resp.text or "", model=model)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("plain generation failed", exc_info=True)
+            on_event("status", f"plain generation failed ({type(exc).__name__}: {exc})")
+            return ProviderResult(text="", model="research-failed")
 
 
 class OfflineProvider:
