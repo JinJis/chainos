@@ -24,6 +24,11 @@ x-datastore-env: &datastore-env
   ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
   GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
   LLM_OFFLINE: ${LLM_OFFLINE:-0}
+  LLM_DEFAULT_PROVIDER: ${LLM_DEFAULT_PROVIDER:-anthropic}
+  # RESEARCH tier (Gemini Deep Research). Set RESEARCH_MAX=1 for the max variant.
+  MODEL_RESEARCH_GOOGLE: ${MODEL_RESEARCH_GOOGLE:-deep-research-preview-04-2026}
+  RESEARCH_MAX: ${RESEARCH_MAX:-0}
+  RESEARCH_TIMEOUT_S: ${RESEARCH_TIMEOUT_S:-900}
   # Set LOG_LEVEL=DEBUG in your .env for verbose engine logs (container + Studio console).
   LOG_LEVEL: ${LOG_LEVEL:-INFO}
   LOG_FORMAT: ${LOG_FORMAT:-text}

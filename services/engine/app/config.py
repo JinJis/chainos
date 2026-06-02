@@ -27,6 +27,14 @@ class Settings(BaseSettings):
     model_deep_google: str = Field(default="gemini-3.1-pro-preview", alias="MODEL_DEEP_GOOGLE")
     model_medium_google: str = Field(default="gemini-3.5-flash", alias="MODEL_MEDIUM_GOOGLE")
     model_low_google: str = Field(default="gemini-3.1-flash-lite", alias="MODEL_LOW_GOOGLE")
+    # RESEARCH tier: Gemini Deep Research agent (autonomous, web-grounded).
+    model_research_google: str = Field(
+        default="deep-research-preview-04-2026", alias="MODEL_RESEARCH_GOOGLE"
+    )
+    # Use the "max" Deep Research variant for the most comprehensive gathering.
+    research_max: bool = Field(default=False, alias="RESEARCH_MAX")
+    # Hard ceiling on how long to wait for a Deep Research interaction (seconds).
+    research_timeout_s: int = Field(default=900, alias="RESEARCH_TIMEOUT_S")
 
     # ── Datastores ───────────────────────────────────────────────────────────
     neo4j_uri: str = Field(default="bolt://localhost:7687", alias="NEO4J_URI")

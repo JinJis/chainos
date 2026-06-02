@@ -18,6 +18,7 @@ from .providers import (
     GoogleProvider,
     OfflineProvider,
     ProviderAdapter,
+    ResearchCallback,
 )
 from .types import LlmMessage, LlmRequest, LlmResponse, Provider, Tier
 
@@ -139,6 +140,48 @@ class LlmRouter:
             provider=provider,
             tier=request.tier,
             data=data,
+            usage=result.usage,
+        )
+
+    # ── RESEARCH tier (autonomous web research) ───────────────────────────────
+    def research(
+        self,
+        brief: str,
+        *,
+        provider: Provider | None = None,
+        on_event: ResearchCallback | None = None,
+    ) -> LlmResponse:
+        """Run the RESEARCH tier — an autonomous, web-grounded deep-research pass.
+        Google → Gemini Deep Research agent; Anthropic → Claude + web_search.
+        Streams progress via `on_event(kind, text)`."""
+        resolved = self._resolve_provider(provider)
+        emit = on_event or (lambda _kind, _text: None)
+        offline = self._settings.offline
+        timeout = self._settings.research_timeout_s
+        log.info(
+            "RESEARCH start",
+            extra={"provider": resolved.value, "offline": offline, "timeout_s": timeout},
+        )
+        if offline:
+            result = self._offline.deep_research(brief=brief, on_event=emit, timeout_s=timeout)
+        elif resolved == Provider.GOOGLE:
+            result = self._google.deep_research(
+                brief=brief, on_event=emit, max_mode=self._settings.research_max, timeout_s=timeout
+            )
+        else:
+            result = self._anthropic.deep_research(
+                brief=brief, on_event=emit, max_mode=self._settings.research_max, timeout_s=timeout
+            )
+        log.info(
+            "RESEARCH done",
+            extra={"provider": resolved.value, "model": result.model, "chars": len(result.text)},
+        )
+        return LlmResponse(
+            text=result.text,
+            model=result.model,
+            provider=resolved,
+            tier=Tier.RESEARCH,
+            data=None,
             usage=result.usage,
         )
 

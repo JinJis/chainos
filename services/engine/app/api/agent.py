@@ -1,8 +1,10 @@
 """Agent run (streamed) + job event history + staging-graph inspection."""
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import threading
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 
@@ -11,6 +13,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 
 from ..agent import run_agent
+from ..agent.loop import AgentEvent
 from ..db import get_session, session_scope
 from ..graph import StagingGraphRepo
 from ..graph_schema import FLOW_VIEW_EDGES
@@ -30,11 +33,13 @@ class _SSELogHandler(logging.Handler):
     """Buffers `chainos.*` log records during an agent run so the run endpoint can
     drain them into the SSE stream — surfacing the Engine's debug/error logging
     directly in the Studio console. Records are filtered by the chainos logger's
-    own level (DEBUG when LOG_LEVEL=DEBUG), so verbosity follows .env."""
+    own level (DEBUG when LOG_LEVEL=DEBUG), so verbosity follows .env. Thread-safe:
+    records are produced on the agent worker thread, drained on the event loop."""
 
     def __init__(self) -> None:
         super().__init__(level=logging.NOTSET)
         self._buffer: list[dict] = []
+        self._lock = threading.Lock()
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
@@ -44,19 +49,21 @@ class _SSELogHandler(logging.Handler):
                 message += "  " + " ".join(f"{k}={v}" for k, v in extras.items())
             if record.exc_info:
                 message += "\n" + logging.Formatter().formatException(record.exc_info)
-            self._buffer.append(
-                {
-                    "kind": "log",
-                    "level": record.levelname,
-                    "logger": record.name,
-                    "message": message,
-                }
-            )
+            with self._lock:
+                self._buffer.append(
+                    {
+                        "kind": "log",
+                        "level": record.levelname,
+                        "logger": record.name,
+                        "message": message,
+                    }
+                )
         except Exception:  # never let logging break the stream
             pass
 
     def drain(self) -> list[dict]:
-        out, self._buffer = self._buffer, []
+        with self._lock:
+            out, self._buffer = self._buffer, []
         return out
 
 
@@ -84,27 +91,55 @@ async def run_theme_agent(theme_id: str) -> StreamingResponse:
         capture = _SSELogHandler()
         chainos_logger = logging.getLogger("chainos")
         chainos_logger.addHandler(capture)
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue = asyncio.Queue()
+        sentinel = object()
+
+        # The agent does blocking LLM/Neo4j work (Deep Research can take minutes), so
+        # it runs in a worker THREAD and pushes events back to the event loop. This
+        # keeps the server responsive and lets research thoughts stream live.
+        def emit(ev: AgentEvent) -> None:
+            loop.call_soon_threadsafe(queue.put_nowait, ev)
+
+        def worker() -> None:
+            try:
+                run_agent(
+                    theme_id=theme_id,
+                    theme_name=name,
+                    depth_max=depth,
+                    providers=providers,
+                    emit=emit,
+                )
+            except Exception as exc:  # safety net — run_agent emits its own errors too
+                loop.call_soon_threadsafe(
+                    queue.put_nowait,
+                    AgentEvent(-1, "error", f"{type(exc).__name__}: {exc}"),
+                )
+            finally:
+                loop.call_soon_threadsafe(queue.put_nowait, sentinel)
+
+        fut = loop.run_in_executor(None, worker)
         log.info("agent stream opened", extra={"job_id": job_id, "theme_id": theme_id})
         try:
             yield _sse({"kind": "job", "job_id": job_id, "message": f"job {job_id} started"})
-            for ev in run_agent(
-                theme_id=theme_id,
-                theme_name=name,
-                depth_max=depth,
-                providers=providers,
-            ):
+            while True:
+                ev = await queue.get()
                 # Flush any engine log lines produced while this step ran.
                 for entry in capture.drain():
                     yield _sse(entry)
-                session.add(
-                    JobEvent(
-                        job_id=job_id,
-                        seq=ev.seq,
-                        kind=ev.kind,
-                        message=ev.message,
-                        data=ev.data or None,
+                if ev is sentinel:
+                    break
+                # Persist real step events (skip ephemeral streamed research thoughts).
+                if not ev.ephemeral:
+                    session.add(
+                        JobEvent(
+                            job_id=job_id,
+                            seq=ev.seq,
+                            kind=ev.kind,
+                            message=ev.message,
+                            data=ev.data or None,
+                        )
                     )
-                )
                 if ev.kind == "done":
                     for spec in ev.data.get("tickets", []):
                         session.add(NeedFactTicket(theme_id=theme_id, **spec))
@@ -115,21 +150,19 @@ async def run_theme_agent(theme_id: str) -> StreamingResponse:
                     theme = session.get(Theme, theme_id)
                     if theme:
                         theme.status = "staged"
+                elif ev.kind == "error":
+                    job = session.get(Job, job_id)
+                    if job:
+                        job.status = "error"
+                        job.error = ev.message
                 session.commit()
-                yield _sse({"seq": ev.seq, "kind": ev.kind, "message": ev.message, "data": ev.data})
+                yield _sse(
+                    {"seq": ev.seq, "kind": ev.kind, "message": ev.message, "data": ev.data}
+                )
             for entry in capture.drain():  # tail
                 yield _sse(entry)
-        except Exception as exc:  # noqa: BLE001
-            log.exception("agent stream FAILED", extra={"job_id": job_id, "theme_id": theme_id})
-            for entry in capture.drain():  # include the captured traceback
-                yield _sse(entry)
-            job = session.get(Job, job_id)
-            if job:
-                job.status = "error"
-                job.error = str(exc)
-            session.commit()
-            yield _sse({"kind": "error", "message": f"{type(exc).__name__}: {exc}"})
         finally:
+            await fut
             chainos_logger.removeHandler(capture)
             session.close()
 

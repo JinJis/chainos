@@ -12,6 +12,8 @@ class AgentState(TypedDict, total=False):
     providers: dict[str, str]
     offline: bool
 
+    # Grounded research briefing produced by the RESEARCH tier (Deep Research).
+    research_report: str
     candidates: list[dict[str, Any]]
     nodes: list[dict[str, Any]]
     edges: list[dict[str, Any]]

@@ -178,6 +178,9 @@ MODEL_LOW_ANTHROPIC=claude-haiku-4-5
 MODEL_DEEP_GOOGLE=gemini-3.1-pro-preview
 MODEL_MEDIUM_GOOGLE=gemini-3.5-flash
 MODEL_LOW_GOOGLE=gemini-3.1-flash-lite
+MODEL_RESEARCH_GOOGLE=deep-research-preview-04-2026   # Gemini Deep Research agent
+RESEARCH_MAX=0          # 1 = deep-research-max variant
+RESEARCH_TIMEOUT_S=900
 ```
 
 ---
