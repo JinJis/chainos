@@ -18,6 +18,40 @@ log = get_logger("llm.provider")
 ResearchCallback = Callable[[str, str], None]
 
 
+def _enum_str(value: Any) -> str | None:
+    """Normalize an SDK field that may be a str OR an enum to its string value,
+    so comparisons like == 'step.delta' work regardless of SDK typing."""
+    if value is None:
+        return None
+    value = getattr(value, "value", value)  # unwrap enums (e.g. EventType.STEP_DELTA)
+    return str(value)
+
+
+def _delta_text(delta: Any) -> str:
+    """Pull the text out of a step.delta across possible SDK shapes."""
+    for attr in ("text", "thought", "content", "summary"):
+        val = getattr(delta, attr, None)
+        if isinstance(val, str) and val:
+            return val
+    if isinstance(delta, dict):
+        for key in ("text", "thought", "content", "summary"):
+            if isinstance(delta.get(key), str):
+                return delta[key]
+    return ""
+
+
+def _describe(obj: Any) -> str:
+    """Compact structural description of an SDK object for diagnostics."""
+    try:
+        d = getattr(obj, "__dict__", None)
+        if d:
+            return f"{type(obj).__name__} {dict(d)!r}"[:600]
+        attrs = [a for a in dir(obj) if not a.startswith("_")]
+        return f"{type(obj).__name__} attrs={attrs}"[:600]
+    except Exception:  # noqa: BLE001
+        return repr(obj)[:600]
+
+
 class ProviderResult:
     def __init__(self, text: str, model: str, usage: dict[str, int] | None = None) -> None:
         self.text = text
@@ -231,26 +265,40 @@ class GoogleProvider:
         }
         state: dict[str, Any] = {"id": None, "last_event": None, "done": False}
         report_parts: list[str] = []
+        counts: dict[str, int] = {"events": 0, "thought": 0, "text": 0, "other": 0}
 
         def process_stream(stream: Any) -> None:
             for event in stream:
-                etype = getattr(event, "event_type", None)
+                counts["events"] += 1
+                # The SDK may give event_type / delta.type as enums — normalize to str.
+                etype = _enum_str(getattr(event, "event_type", None) or getattr(event, "type", None))
+                # Dump the first few raw events so we can verify the actual shape.
+                if counts["events"] <= 6:
+                    log.debug("DR raw event #%d: %s", counts["events"], _describe(event))
                 if etype == "interaction.created":
-                    state["id"] = getattr(event.interaction, "id", None)
+                    interaction = getattr(event, "interaction", None)
+                    state["id"] = getattr(interaction, "id", None) or state["id"]
                 if getattr(event, "event_id", None):
                     state["last_event"] = event.event_id
                 if etype == "step.delta":
                     delta = getattr(event, "delta", None)
-                    dtype = getattr(delta, "type", None)
+                    dtype = _enum_str(getattr(delta, "type", None))
+                    text = _delta_text(delta)
                     if dtype == "text":  # part of the final report, streamed live
-                        chunk = getattr(delta, "text", "") or ""
-                        report_parts.append(chunk)
-                        on_event("text", chunk)
+                        counts["text"] += 1
+                        report_parts.append(text)
+                        on_event("text", text)
                     elif dtype == "thought":  # intermediate reasoning step
-                        on_event("thought", getattr(delta, "text", "") or "")
-                    # "image" deltas are ignored for now
-                elif etype in ("interaction.completed", "error"):
+                        counts["thought"] += 1
+                        log.debug("DR thought: %s", text[:200])
+                        on_event("thought", text)
+                    else:
+                        counts["other"] += 1
+                        log.debug("DR step.delta other type=%r text=%r", dtype, text[:120])
+                elif etype in ("interaction.completed", "error", "interaction.failed"):
                     state["done"] = True
+                elif etype:
+                    log.debug("DR event type=%s", etype)
 
         on_event("status", f"starting Gemini Deep Research ({agent_id}) with google_search")
         stream = client.interactions.create(
@@ -268,14 +316,14 @@ class GoogleProvider:
         deadline = _time.monotonic() + timeout_s
         while not state["done"] and state["id"] and _time.monotonic() < deadline:
             status = client.interactions.get(state["id"])
-            st = getattr(status, "status", None)
-            if st != "in_progress":
+            st = _enum_str(getattr(status, "status", None))
+            if st not in ("in_progress", "queued", "running", None):
                 if st == "failed":
                     on_event("status", f"Deep Research failed: {getattr(status, 'error', '')}")
                 if not report_parts and getattr(status, "output_text", None):
                     report_parts.append(status.output_text)
                 break
-            on_event("status", "reconnecting to research stream…")
+            on_event("status", "researching… (reconnecting to stream)")
             stream = client.interactions.get(
                 id=state["id"], stream=True, last_event_id=state["last_event"]
             )
@@ -285,7 +333,20 @@ class GoogleProvider:
         if not report and state["id"]:
             final = client.interactions.get(state["id"])
             report = getattr(final, "output_text", "") or ""
-        on_event("status", f"Deep Research complete — {len(report)} chars")
+        log.info(
+            "Deep Research stream summary",
+            extra={
+                "events": counts["events"],
+                "thoughts": counts["thought"],
+                "text_deltas": counts["text"],
+                "other_deltas": counts["other"],
+                "report_chars": len(report),
+            },
+        )
+        on_event(
+            "status",
+            f"Deep Research complete — {counts['thought']} thoughts, {len(report)} report chars",
+        )
         return ProviderResult(text=report, model=agent_id)
 
     def _grounded_research(self, brief: str, on_event: ResearchCallback) -> ProviderResult:
