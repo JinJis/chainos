@@ -79,7 +79,16 @@ def _research(state: AgentState) -> AgentState:
         "node RESEARCH start",
         extra={"theme_id": state.get("theme_id"), "depth": state["depth_max"], "offline": offline},
     )
+    research_prompt = research_user(state["theme_name"], state["depth_max"], [])
     if offline:
+        # Offline bypasses the model; show the prompt that WOULD be sent so the
+        # console still surfaces "the prompts used".
+        logger.debug(
+            "RESEARCH PROMPT (offline — reproducing seed, not sent to a model)\n"
+            "--- system ---\n%s\n--- user ---\n%s",
+            RESEARCH_SYSTEM,
+            research_prompt,
+        )
         slice_ = _filter_seed_by_depth(state["depth_max"])
         companies = [n for n in slice_["nodes"] if n["label"] == "Company"]
         candidates = [
@@ -87,9 +96,10 @@ def _research(state: AgentState) -> AgentState:
             for c in companies
         ]
     else:
+        # Live: the router logs the full prompt/response/result for this call.
         resp = router.prompt(
             Tier.RESEARCH,
-            research_user(state["theme_name"], state["depth_max"], []),
+            research_prompt,
             system=RESEARCH_SYSTEM,
             provider=_provider(state["providers"], Tier.RESEARCH),
             json_schema=RESEARCH_SCHEMA,
@@ -101,8 +111,9 @@ def _research(state: AgentState) -> AgentState:
                 extra={"theme_id": state.get("theme_id"), "raw_preview": resp.text[:200]},
             )
     logger.debug(
-        "RESEARCH candidates",
-        extra={"tickers": [c.get("ticker") for c in candidates]},
+        "RESEARCH RESULT — %d companies: %s",
+        len(candidates),
+        ", ".join(f"{c.get('name')} ({c.get('ticker')})" for c in candidates),
     )
     return {
         "candidates": candidates,
@@ -124,9 +135,21 @@ def _deep(state: AgentState) -> AgentState:
     if offline:
         g = _filter_seed_by_depth(state["depth_max"])
         nodes, edges = g["nodes"], g["edges"]
+        offline_companies = [
+            {"name": n.get("name"), "ticker": n.get("ticker")}
+            for n in nodes
+            if n["label"] == "Company"
+        ]
+        logger.debug(
+            "DEEP PROMPT (offline — reproducing seed, not sent to a model)\n"
+            "--- system ---\n%s\n--- user ---\n%s",
+            DEEP_SYSTEM,
+            deep_user(state["theme_name"], offline_companies),
+        )
     else:
         candidates = state.get("candidates", [])
         nodes = [{"label": "Company", **c} for c in candidates]
+        # Live: the router logs the full prompt/response/result for this call.
         resp = router.prompt(
             Tier.DEEP,
             deep_user(state["theme_name"], candidates),
@@ -154,6 +177,20 @@ def _deep(state: AgentState) -> AgentState:
     logger.info(
         "node DEEP done",
         extra={"companies": n_co, "nodes": len(nodes), "edges": len(edges), "supplies": n_sup},
+    )
+    # Detailed RESULT — divisions, products, supply links the agent drafted.
+    divisions = [n["name"] for n in nodes if n["label"] == "Division"]
+    products = [n["name"] for n in nodes if n["label"] == "Product"]
+    supplies = [
+        f"{e['from']}→{e['to']} ({e.get('product_ref', '?')} {e.get('allocation_pct', '?')}%)"
+        for e in edges
+        if e["type"] == "SUPPLIES"
+    ]
+    logger.debug(
+        "DEEP RESULT\n  divisions: %s\n  products: %s\n  supplies:\n    %s",
+        ", ".join(divisions) or "(none)",
+        ", ".join(products) or "(none)",
+        "\n    ".join(supplies) or "(none)",
     )
     return {
         "nodes": nodes,

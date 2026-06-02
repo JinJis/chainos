@@ -75,6 +75,16 @@ class LlmRouter:
                 "max_tokens": request.max_tokens,
             },
         )
+        # Full PROMPT (system + messages) — visible in the Studio console at DEBUG.
+        user_text = "\n".join(f"[{m.role}] {m.content}" for m in request.messages)
+        log.debug(
+            "LLM PROMPT  %s/%s %s\n--- system ---\n%s\n--- user ---\n%s",
+            request.tier.value,
+            provider.value,
+            model,
+            request.system or "(none)",
+            user_text,
+        )
         start = time.perf_counter()
         try:
             result = adapter.complete(
@@ -93,6 +103,9 @@ class LlmRouter:
             raise
         duration_ms = round((time.perf_counter() - start) * 1000, 1)
 
+        # Raw RESPONSE text.
+        log.debug("LLM RESPONSE  %s (%sms)\n%s", result.model, duration_ms, _truncate(result.text))
+
         data: Any | None = None
         if request.json_schema is not None:
             data = _safe_parse_json(result.text)
@@ -101,6 +114,13 @@ class LlmRouter:
                     "llm JSON response did not parse",
                     extra={"tier": request.tier.value, "model": result.model,
                            "preview": result.text[:200]},
+                )
+            else:
+                # Parsed RESULT.
+                log.debug(
+                    "LLM RESULT (parsed)  %s\n%s",
+                    result.model,
+                    _truncate(json.dumps(data, ensure_ascii=False, indent=2)),
                 )
         log.info(
             "llm done",
@@ -143,6 +163,16 @@ class LlmRouter:
                 max_tokens=max_tokens,
             )
         )
+
+
+# Cap very long prompt/response dumps in the log/console (generous but bounded).
+_LOG_MAX_CHARS = 8000
+
+
+def _truncate(text: str, limit: int = _LOG_MAX_CHARS) -> str:
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit]}… (+{len(text) - limit} more chars)"
 
 
 def _safe_parse_json(text: str) -> Any | None:
