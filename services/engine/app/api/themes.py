@@ -8,7 +8,7 @@ from ..db import session_scope
 from ..graph import ProductionGraphRepo, StagingGraphRepo
 from ..logging_config import get_logger
 from ..models import Theme
-from ..schemas import ThemeCreate, ThemeOut
+from ..schemas import ThemeCreate, ThemeOut, ThemeUpdate
 
 router = APIRouter(prefix="/themes", tags=["themes"])
 log = get_logger("api.themes")
@@ -36,12 +36,28 @@ def create_theme(body: ThemeCreate) -> ThemeOut:
             model_assignment=body.model_assignment,
             seed_tickers=body.seed_tickers,
             context_notes=body.context_notes,
+            research_report=body.research_report,
             status="draft",
         )
         s.add(theme)
         s.flush()
         out = _to_out(theme)
     log.info("theme created", extra={"theme_id": out.id, "theme_name": out.name})
+    return out
+
+
+@router.patch("/{theme_id}", response_model=ThemeOut)
+def update_theme(theme_id: str, body: ThemeUpdate) -> ThemeOut:
+    log.info("update theme", extra={"theme_id": theme_id})
+    with session_scope() as s:
+        theme = s.get(Theme, theme_id)
+        if theme is None:
+            log.warning("update_theme: not found", extra={"theme_id": theme_id})
+            raise HTTPException(404, "theme not found")
+        if body.research_report is not None:
+            theme.research_report = body.research_report
+        s.flush()
+        out = _to_out(theme)
     return out
 
 

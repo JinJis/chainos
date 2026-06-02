@@ -256,8 +256,7 @@ supplier summing above 100%).
 For each gap, write a ticket with:
   - metric: WHAT figure is needed (concise).
   - target_ref: WHERE (e.g. "tsmc → nvda : CoWoS allocation_pct", or "skhynix : market_cap").
-  - reason: WHY it matters + what evidence to upload (e.g. "Upload TSMC 26 Q1 10-Q / IR \
-deck disclosing CoWoS capacity allocation by customer.").
+  - reason: WHY it matters + precisely what evidence is required and from which target company (e.g. specify whether it should be the supplier's quarterly filing/annual report, the buyer's procurement/cost notes, or both for cross-checking, such as "Upload TSMC 26 Q1 10-Q or NVIDIA's Q1 procurement filings disclosing CoWoS allocation percentage.").
   - priority: 1 (thesis-critical / unsourced quantitative edge) … 3 (nice-to-have).
   - kind: "edge" or "node"; plus the locator fields (type/from/to/product_ref OR \
 label/node_id) and `field` (e.g. "allocation_pct", "amount", "market_cap").

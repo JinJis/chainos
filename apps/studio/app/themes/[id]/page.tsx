@@ -61,8 +61,30 @@ export default function ThemeConsole({ params }: { params: { id: string } }) {
   const { data: tickets } = useQuery({
     queryKey: ['tickets', themeId],
     queryFn: () => api.listTickets(themeId),
-    refetchInterval: 4000,
   });
+
+  const [isEditingReport, setIsEditingReport] = useState(false);
+  const [reportText, setReportText] = useState('');
+
+  const saveReport = useMutation({
+    mutationFn: (text: string | null) => api.updateTheme(themeId, { research_report: text }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['theme', themeId] });
+      setIsEditingReport(false);
+    },
+  });
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const text = evt.target?.result as string;
+      setReportText(text);
+      setIsEditingReport(true);
+    };
+    reader.readAsText(file);
+  };
 
   const [events, setEvents] = useState<AgentEvent[]>([]);
   const [running, setRunning] = useState(false);
@@ -70,6 +92,10 @@ export default function ThemeConsole({ params }: { params: { id: string } }) {
   const abortRef = useRef<AbortController | null>(null);
 
   async function onRun() {
+    if (!theme?.research_report) {
+      alert('No research report found. Please upload or paste your Gemini Deep Research report first.');
+      return;
+    }
     setEvents([]);
     setRunning(true);
     const ctrl = new AbortController();
@@ -114,7 +140,99 @@ export default function ThemeConsole({ params }: { params: { id: string } }) {
       </div>
 
       <div className="grid" style={{ gridTemplateColumns: '1.2fr 1fr', alignItems: 'start' }}>
-        <section className="panel">
+        <div className="grid" style={{ gap: 16 }}>
+          <section className="panel">
+            <h3 style={{ marginTop: 0 }}>Deep Research Report</h3>
+            
+            {theme?.research_report ? (
+              <div>
+                <div className="row" style={{ justifyContent: 'space-between', marginBottom: 10 }}>
+                  <span className="dim" style={{ fontSize: 13 }}>
+                    ✅ Gemini Deep Research report loaded ({theme.research_report.length} characters)
+                  </span>
+                  <div className="row" style={{ gap: 8 }}>
+                    <button onClick={() => {
+                      setReportText(theme.research_report || '');
+                      setIsEditingReport(true);
+                    }} style={{ padding: '4px 10px', fontSize: 12 }}>
+                      Edit Report
+                    </button>
+                    <button onClick={() => {
+                      if (confirm("Are you sure you want to clear the research report?")) {
+                        saveReport.mutate(null);
+                      }
+                    }} className="danger" style={{ padding: '4px 10px', fontSize: 12 }}>
+                      Clear
+                    </button>
+                  </div>
+                </div>
+                {!isEditingReport && (
+                  <pre style={{
+                    background: '#04060c',
+                    border: '1px solid var(--border)',
+                    borderRadius: 8,
+                    padding: 10,
+                    maxHeight: 150,
+                    overflow: 'auto',
+                    fontSize: 11.5,
+                    margin: 0,
+                    whiteSpace: 'pre-wrap',
+                    color: 'var(--dim)',
+                  }}>
+                    {theme.research_report}
+                  </pre>
+                )}
+              </div>
+            ) : (
+              <div>
+                <p className="dim" style={{ margin: '0 0 12px 0', fontSize: 13 }}>
+                  Upload your manual Gemini Deep Research report (.txt) or paste the text below to extract the value-chain graph.
+                </p>
+                {!isEditingReport && (
+                  <div className="row" style={{ gap: 12 }}>
+                    <button className="primary" onClick={() => {
+                      setReportText('');
+                      setIsEditingReport(true);
+                    }} style={{ fontSize: 13 }}>
+                      ✍ Paste text report
+                    </button>
+                    <div className="dim" style={{ fontSize: 13 }}>
+                      <button onClick={() => document.getElementById('report-file-input')?.click()} style={{ fontSize: 13 }}>
+                        📁 Upload .txt file
+                      </button>
+                      <input
+                        id="report-file-input"
+                        type="file"
+                        accept=".txt,.md"
+                        onChange={handleFileUpload}
+                        style={{ display: 'none' }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {isEditingReport && (
+              <div style={{ marginTop: 12 }} className="grid">
+                <textarea
+                  value={reportText}
+                  onChange={(e) => setReportText(e.target.value)}
+                  placeholder="Paste the research report text from Gemini UI here..."
+                  rows={12}
+                  style={{ fontSize: 13, fontFamily: 'var(--mono)' }}
+                />
+                <div className="row" style={{ gap: 8 }}>
+                  <button className="primary" onClick={() => saveReport.mutate(reportText)} disabled={saveReport.isPending}>
+                    {saveReport.isPending ? 'Saving…' : 'Save Report'}
+                  </button>
+                  <button onClick={() => setIsEditingReport(false)}>Cancel</button>
+                </div>
+              </div>
+            )}
+          </section>
+
+          <section className="panel">
           <div className="row" style={{ justifyContent: 'space-between', alignItems: 'baseline' }}>
             <h3 style={{ marginTop: 0 }}>Agent console</h3>
             <label className="dim" style={{ fontSize: 12, cursor: 'pointer' }}>
@@ -157,6 +275,7 @@ export default function ThemeConsole({ params }: { params: { id: string } }) {
               ))}
           </div>
         </section>
+      </div>
 
         <section className="panel">
           <h3 style={{ marginTop: 0 }}>

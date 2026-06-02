@@ -14,6 +14,11 @@ class ThemeCreate(BaseModel):
     model_assignment: dict[str, str] = Field(default_factory=dict)
     seed_tickers: list[str] = Field(default_factory=list)
     context_notes: str | None = None
+    research_report: str | None = None
+
+
+class ThemeUpdate(BaseModel):
+    research_report: str | None = None
 
 
 class ThemeOut(BaseModel):
@@ -25,6 +30,7 @@ class ThemeOut(BaseModel):
     model_assignment: dict[str, str]
     seed_tickers: list[str]
     context_notes: str | None
+    research_report: str | None
     published_at: datetime | None
     created_at: datetime
     staging_counts: dict[str, int] = Field(default_factory=dict)

@@ -31,8 +31,8 @@ export default function Dashboard() {
   const [depth, setDepth] = useState(3);
   const [assignment, setAssignment] = useState<Record<string, string>>({
     RESEARCH: 'google',
-    DEEP: 'anthropic',
-    MEDIUM: 'anthropic',
+    DEEP: 'google',
+    MEDIUM: 'google',
     LOW: 'google',
   });
 

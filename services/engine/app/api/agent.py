@@ -103,6 +103,7 @@ async def run_theme_agent(theme_id: str) -> StreamingResponse:
         name = theme.name
         depth = theme.depth_max
         providers = dict(theme.model_assignment or {})
+        research_report = theme.research_report
 
     async def event_stream() -> AsyncIterator[str]:
         session = get_session()
@@ -127,6 +128,7 @@ async def run_theme_agent(theme_id: str) -> StreamingResponse:
                     depth_max=depth,
                     providers=providers,
                     emit=emit,
+                    research_report=research_report,
                 )
             except Exception as exc:  # safety net — run_agent emits its own errors too
                 log.exception("agent worker crashed", extra={"job_id": job_id, "theme_id": theme_id})

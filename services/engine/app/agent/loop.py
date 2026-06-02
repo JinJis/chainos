@@ -254,14 +254,30 @@ def _rule_based_gaps(nodes: list[dict], edges: list[dict]) -> list[dict[str, Any
         )
         if weak:
             field_name = "allocation_pct" if e["type"] == "SUPPLIES" else "amount"
+            if e["type"] == "SUPPLIES":
+                reason = (
+                    f"No filing-grade source found. Please upload the supplier's ({e['from']}) "
+                    f"or buyer's ({e['to']}) official {BASE_DATE} disclosure, quarterly/annual report "
+                    "(10-Q/10-K), IR presentation, or a reliable third-party brokerage/supply-chain "
+                    f"report detailing this supply link / allocation %."
+                )
+            elif e["type"] == "REVENUE_FLOW":
+                reason = (
+                    f"No filing-grade source found. Please upload {e['from']}'s or {e['to']}'s "
+                    f"disclosures, filings, or financial statements as of {BASE_DATE} to verify this "
+                    f"revenue relationship / amount."
+                )
+            else:
+                reason = (
+                    f"No filing-grade source found. Please upload disclosures or IR reports from "
+                    f"{e['from']} or {e['to']} as of {BASE_DATE} to verify this {e['type']} link."
+                )
+
             specs.append(
                 {
                     "metric": f"{e['type']} {e.get('product_ref', e.get('period', ''))}".strip(),
                     "target_ref": f"{e['from']} → {e['to']}",
-                    "reason": (
-                        "No filing-grade source for this figure — please upload evidence "
-                        f"as of {BASE_DATE}."
-                    ),
+                    "reason": reason,
                     "priority": 1,
                     "payload": {
                         "kind": "edge",
@@ -411,6 +427,7 @@ def run_agent(
     providers: dict[str, str],
     emit: EmitFn,
     seed_tickers: list[str] | None = None,
+    research_report: str | None = None,
 ) -> None:
     """Run the full pipeline, emitting an AgentEvent per step (and per streamed
     research thought). The caller runs this in a worker thread and streams events
@@ -436,49 +453,27 @@ def run_agent(
     ev(
         "start",
         f"Agent started for '{theme_name}' (depth {depth_max}) — "
-        f"{'offline seed' if offline else 'live web research'}",
+        f"{'offline seed' if offline else 'parsing uploaded research report'}",
     )
-
-    # ── RESEARCH (streaming) ──────────────────────────────────────────────────
-    # Stream the Deep Research agent's thought summaries live, plus a lightweight
-    # "drafting report" progress as the final report text streams in.
-    text_progress = {"chars": 0, "emitted": 0}
-
-    def on_research(kind: str, text: str) -> None:
-        if not text:
-            return
-        if kind == "thought":
-            logger.debug("research thought: %s", text)
-            ev("research", f"🔍 {text.strip()}", ephemeral=True)
-        elif kind == "text":
-            text_progress["chars"] += len(text)
-            if text_progress["chars"] - text_progress["emitted"] >= 600:
-                text_progress["emitted"] = text_progress["chars"]
-                ev("research", f"📝 drafting report… {text_progress['chars']} chars", ephemeral=True)
-        else:  # status
-            logger.info("research: %s", text)
-            ev("research", f"· {text}")
 
     report = ""
-    try:
-        report = _do_research(
-            theme_name=theme_name,
-            depth_max=depth_max,
-            seed_tickers=seed_tickers or [],
-            providers=providers,
-            offline=offline,
-            on_event=on_research,
+    if offline:
+        ev(
+            "research",
+            "RESEARCH skipped (offline) — using seed dataset",
+            {"chars": 0},
         )
-    except Exception as exc:  # research failed — fall through to seed/empty
-        logger.exception("RESEARCH failed", extra={"theme_id": theme_id})
-        ev("research", f"⚠ research failed ({type(exc).__name__}: {exc}); using seed/derived skeleton")
-    ev(
-        "research",
-        f"RESEARCH complete — {len(report)} chars of grounded findings"
-        if report
-        else "RESEARCH skipped (offline) — using seed dataset",
-        {"chars": len(report)},
-    )
+    else:
+        if not research_report or not research_report.strip():
+            logger.warning("No research report uploaded for theme %s", theme_id)
+            ev("error", "No research report found. Please upload a Gemini Deep Research report in the Studio before running the agent.")
+            return
+        report = research_report
+        ev(
+            "research",
+            f"RESEARCH complete — using uploaded report ({len(report)} chars)",
+            {"chars": len(report)},
+        )
 
     # ── DEEP → PERSIST → GAPS (LangGraph) ─────────────────────────────────────
     initial: AgentState = {

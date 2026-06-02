@@ -11,6 +11,7 @@ export interface Theme {
   model_assignment: Record<string, string>;
   seed_tickers: string[];
   context_notes: string | null;
+  research_report: string | null;
   published_at: string | null;
   created_at: string;
   staging_counts: { nodes?: number; edges?: number };
@@ -116,6 +117,12 @@ export const api = {
     }).then((r) => json<Theme>(r)),
   deleteTheme: (id: string) =>
     fetch(`${BASE}/themes/${id}`, { method: 'DELETE' }).then((r) => json(r)),
+  updateTheme: (id: string, body: { research_report: string | null }) =>
+    fetch(`${BASE}/themes/${id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    }).then((r) => json<Theme>(r)),
   listTickets: (themeId: string) =>
     fetch(`${BASE}/tickets?theme_id=${themeId}`).then((r) => json<Ticket[]>(r)),
   attachSource: (ticketId: string, form: FormData) =>
