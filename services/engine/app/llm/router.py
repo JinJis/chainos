@@ -7,10 +7,12 @@ model that produced it. No SDK calls happen anywhere else in the codebase."""
 from __future__ import annotations
 
 import json
+import time
 from functools import lru_cache
 from typing import Any
 
 from ..config import Settings, get_settings
+from ..logging_config import get_logger
 from .providers import (
     AnthropicProvider,
     GoogleProvider,
@@ -18,6 +20,8 @@ from .providers import (
     ProviderAdapter,
 )
 from .types import LlmMessage, LlmRequest, LlmResponse, Provider, Tier
+
+log = get_logger("llm")
 
 
 class LlmRouter:
@@ -59,21 +63,60 @@ class LlmRouter:
         provider = self._resolve_provider(request.provider)
         model = self.model_id(request.tier, provider)
         adapter = self._adapter(provider)
-        result = adapter.complete(
-            model=model,
-            messages=[{"role": m.role, "content": m.content} for m in request.messages],
-            system=request.system,
-            max_tokens=request.max_tokens,
-            temperature=request.temperature,
-            json_schema=request.json_schema,
+        offline = self._settings.offline
+        log.debug(
+            "llm call",
+            extra={
+                "tier": request.tier.value,
+                "provider": provider.value,
+                "model": model,
+                "mode": "offline" if offline else "live",
+                "json": request.json_schema is not None,
+                "max_tokens": request.max_tokens,
+            },
         )
+        start = time.perf_counter()
+        try:
+            result = adapter.complete(
+                model=model,
+                messages=[{"role": m.role, "content": m.content} for m in request.messages],
+                system=request.system,
+                max_tokens=request.max_tokens,
+                temperature=request.temperature,
+                json_schema=request.json_schema,
+            )
+        except Exception:
+            log.exception(
+                "llm call FAILED",
+                extra={"tier": request.tier.value, "provider": provider.value, "model": model},
+            )
+            raise
+        duration_ms = round((time.perf_counter() - start) * 1000, 1)
+
         data: Any | None = None
         if request.json_schema is not None:
             data = _safe_parse_json(result.text)
+            if data is None:
+                log.warning(
+                    "llm JSON response did not parse",
+                    extra={"tier": request.tier.value, "model": result.model,
+                           "preview": result.text[:200]},
+                )
+        log.info(
+            "llm done",
+            extra={
+                "tier": request.tier.value,
+                "model": result.model,
+                "ms": duration_ms,
+                "in_tokens": result.usage.get("input_tokens", 0),
+                "out_tokens": result.usage.get("output_tokens", 0),
+                "chars": len(result.text),
+            },
+        )
         return LlmResponse(
             text=result.text,
             model=result.model,
-            provider=provider if not self._settings.offline else provider,
+            provider=provider,
             tier=request.tier,
             data=data,
             usage=result.usage,

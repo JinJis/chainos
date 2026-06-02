@@ -38,6 +38,9 @@ export interface AgentEvent {
   message: string;
   job_id?: string;
   data?: Record<string, unknown>;
+  // Present on kind === 'log' (engine debug/info/warning/error captured during the run).
+  level?: string;
+  logger?: string;
 }
 
 export interface ParsePreview {

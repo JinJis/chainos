@@ -13,6 +13,7 @@ from ..config import get_settings
 from ..graph import StagingGraphRepo
 from ..graph_schema import QUANTITATIVE_EDGE_TYPES
 from ..llm import Provider, Tier, get_router
+from ..logging_config import get_logger
 from ..seed import dataset
 from .prompts import (
     DEEP_SCHEMA,
@@ -23,6 +24,8 @@ from .prompts import (
     research_user,
 )
 from .state import AgentState
+
+logger = get_logger("agent")
 
 
 @dataclass
@@ -71,7 +74,12 @@ def _filter_seed_by_depth(depth: int) -> dict[str, list[dict[str, Any]]]:
 # ── graph nodes ──────────────────────────────────────────────────────────────
 def _research(state: AgentState) -> AgentState:
     router = get_router()
-    if state.get("offline"):
+    offline = bool(state.get("offline"))
+    logger.info(
+        "node RESEARCH start",
+        extra={"theme_id": state.get("theme_id"), "depth": state["depth_max"], "offline": offline},
+    )
+    if offline:
         slice_ = _filter_seed_by_depth(state["depth_max"])
         companies = [n for n in slice_["nodes"] if n["label"] == "Company"]
         candidates = [
@@ -87,6 +95,15 @@ def _research(state: AgentState) -> AgentState:
             json_schema=RESEARCH_SCHEMA,
         )
         candidates = (resp.data or {}).get("companies", [])
+        if not candidates:
+            logger.warning(
+                "RESEARCH returned no candidates",
+                extra={"theme_id": state.get("theme_id"), "raw_preview": resp.text[:200]},
+            )
+    logger.debug(
+        "RESEARCH candidates",
+        extra={"tickers": [c.get("ticker") for c in candidates]},
+    )
     return {
         "candidates": candidates,
         "log": {
@@ -99,7 +116,12 @@ def _research(state: AgentState) -> AgentState:
 
 def _deep(state: AgentState) -> AgentState:
     router = get_router()
-    if state.get("offline"):
+    offline = bool(state.get("offline"))
+    logger.info(
+        "node DEEP start",
+        extra={"theme_id": state.get("theme_id"), "candidates": len(state.get("candidates", []))},
+    )
+    if offline:
         g = _filter_seed_by_depth(state["depth_max"])
         nodes, edges = g["nodes"], g["edges"]
     else:
@@ -129,6 +151,10 @@ def _deep(state: AgentState) -> AgentState:
             edges.append({"type": "SUPPLIES", "confidence": "derived", **sup})
     n_co = sum(1 for n in nodes if n["label"] == "Company")
     n_sup = sum(1 for e in edges if e["type"] == "SUPPLIES")
+    logger.info(
+        "node DEEP done",
+        extra={"companies": n_co, "nodes": len(nodes), "edges": len(edges), "supplies": n_sup},
+    )
     return {
         "nodes": nodes,
         "edges": edges,
@@ -142,9 +168,18 @@ def _deep(state: AgentState) -> AgentState:
 
 def _persist(state: AgentState) -> AgentState:
     repo = StagingGraphRepo()
+    logger.info(
+        "node PERSIST start",
+        extra={
+            "theme_id": state.get("theme_id"),
+            "nodes": len(state.get("nodes", [])),
+            "edges": len(state.get("edges", [])),
+        },
+    )
     repo.ensure_constraints()
     repo.write_graph(state["theme_id"], state.get("nodes", []), state.get("edges", []))
     counts = repo.count(state["theme_id"])
+    logger.info("node PERSIST done", extra={"theme_id": state.get("theme_id"), **counts})
     return {
         "log": {
             "kind": "persist",
@@ -200,6 +235,12 @@ def _gaps(state: AgentState) -> AgentState:
                     },
                 }
             )
+    logger.info(
+        "node GAPS done",
+        extra={"theme_id": state.get("theme_id"), "tickets": len(specs)},
+    )
+    for spec in specs:
+        logger.debug("need-fact ticket", extra={"metric": spec["metric"], "target": spec["target_ref"]})
     return {
         "ticket_specs": specs,
         "log": {
@@ -236,6 +277,16 @@ def run_agent(
     the Staging DB as it goes; the caller persists job events + tickets."""
     settings = get_settings()
     seq = 0
+    logger.info(
+        "agent run START",
+        extra={
+            "theme_id": theme_id,
+            "theme": theme_name,
+            "depth": depth_max,
+            "offline": settings.offline,
+            "providers": providers or {},
+        },
+    )
     yield AgentEvent(seq, "start", f"Agent started for theme '{theme_name}' (depth {depth_max})")
     seq += 1
 
@@ -250,17 +301,23 @@ def run_agent(
     graph = _build_graph()
     try:
         for step in graph.stream(initial):
-            for _node, update in step.items():
+            for node_name, update in step.items():
                 final.update(update)
+                logger.debug("graph step", extra={"node": node_name, "theme_id": theme_id})
                 log = update.get("log")
                 if log:
                     yield AgentEvent(seq, log["kind"], log["message"], log.get("data", {}))
                     seq += 1
-    except Exception as exc:  # surface failures into the console
-        yield AgentEvent(seq, "error", f"Agent error: {exc}")
+    except Exception as exc:  # surface failures into the console + server logs
+        logger.exception("agent run FAILED", extra={"theme_id": theme_id, "seq": seq})
+        yield AgentEvent(seq, "error", f"Agent error: {type(exc).__name__}: {exc}")
         raise
 
     tickets = final.get("ticket_specs", [])
+    logger.info(
+        "agent run DONE",
+        extra={"theme_id": theme_id, "tickets": len(tickets), "events": seq},
+    )
     yield AgentEvent(
         seq,
         "done",

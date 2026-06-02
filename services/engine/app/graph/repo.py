@@ -12,7 +12,10 @@ from typing import Any
 from neo4j import Driver
 
 from ..graph_schema import EDGE_TYPES, NODE_LABELS
+from ..logging_config import get_logger
 from .client import get_driver
+
+log = get_logger("graph")
 
 _NODE_LABELS = set(NODE_LABELS)
 _EDGE_TYPES = set(EDGE_TYPES)
@@ -95,12 +98,18 @@ class GraphRepo:
             )
 
     def write_graph(self, theme_id: str, nodes: list[dict], edges: list[dict]) -> None:
+        log.debug(
+            "write_graph",
+            extra={"track": self.track, "theme_id": theme_id, "nodes": len(nodes), "edges": len(edges)},
+        )
         for n in nodes:
             self.upsert_node(theme_id, n)
         for e in edges:
             self.upsert_edge(theme_id, e)
+        log.debug("write_graph done", extra={"track": self.track, "theme_id": theme_id})
 
     def clear_theme(self, theme_id: str) -> None:
+        log.debug("clear_theme", extra={"track": self.track, "theme_id": theme_id})
         with self._driver.session() as s:
             s.run(
                 "MATCH (n {_theme: $theme, _track: $track}) DETACH DELETE n",

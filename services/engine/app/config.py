@@ -48,6 +48,12 @@ class Settings(BaseSettings):
     market_data_api_key: str | None = Field(default=None, alias="MARKET_DATA_API_KEY")
     market_data_mode: str = Field(default="delayed", alias="MARKET_DATA_MODE")
 
+    # ── Logging ──────────────────────────────────────────────────────────────
+    # LOG_LEVEL: DEBUG | INFO | WARNING | ERROR. DEBUG = verbose (also streamed
+    # into the Studio agent console). LOG_FORMAT: text | json.
+    log_level: str = Field(default="INFO", alias="LOG_LEVEL")
+    log_format: str = Field(default="text", alias="LOG_FORMAT")
+
     @property
     def offline(self) -> bool:
         """Use the deterministic offline provider when explicitly set OR when no

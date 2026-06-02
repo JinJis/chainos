@@ -24,6 +24,9 @@ x-datastore-env: &datastore-env
   ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
   GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
   LLM_OFFLINE: ${LLM_OFFLINE:-0}
+  # Set LOG_LEVEL=DEBUG in your .env for verbose engine logs (container + Studio console).
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  LOG_FORMAT: ${LOG_FORMAT:-text}
 
 services:
   # ── datastores ──────────────────────────────────────────────────────────────

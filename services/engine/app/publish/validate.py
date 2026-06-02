@@ -12,6 +12,9 @@ from ..graph_schema import (
     QUANTITATIVE_EDGE_FIELDS,
     QUANTITATIVE_EDGE_TYPES,
 )
+from ..logging_config import get_logger
+
+log = get_logger("publish.validate")
 
 _REQUIRED_TRUST = ("source_id", "base_date", "next_update", "confidence")
 
@@ -93,4 +96,12 @@ def validate_theme(theme_id: str, repo: StagingGraphRepo | None = None) -> Valid
         else:
             passed += 1
 
-    return ValidationReport(ok=not failures, total=total, passed=passed, failures=failures)
+    report = ValidationReport(ok=not failures, total=total, passed=passed, failures=failures)
+    log.info(
+        "validation gate",
+        extra={"theme_id": theme_id, "ok": report.ok, "passed": passed, "total": total,
+               "failed": len(failures)},
+    )
+    for f in failures:
+        log.debug("gate failure", extra={"ref": f.ref, "missing": ",".join(f.missing)})
+    return report

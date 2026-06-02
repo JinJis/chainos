@@ -12,7 +12,10 @@ from typing import Any
 from ..config import get_settings
 from ..graph import StagingGraphRepo
 from ..llm import Provider, Tier, get_router
+from ..logging_config import get_logger
 from ..seed.dataset import NEXT_UPDATE
+
+log = get_logger("agent.extract")
 
 EXTRACT_SYSTEM = (
     "You extract a single quantitative figure from a disclosure. Return the exact "
@@ -73,6 +76,10 @@ def parse_evidence(
         span = str(data.get("span") or "")
     if value is None:
         value, span = _regex_value(text, field)
+    log.info(
+        "extracted figure",
+        extra={"field": field, "value": value, "found": value is not None, "by": extracted_by},
+    )
     return {
         "field": field,
         "value": value,

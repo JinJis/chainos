@@ -9,7 +9,10 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..graph import ProductionGraphRepo, StagingGraphRepo
+from ..logging_config import get_logger
 from .validate import ValidationReport, validate_theme
+
+log = get_logger("publish")
 
 
 class PublishBlocked(Exception):
@@ -26,11 +29,17 @@ class PublishResult:
 
 def publish_graph(theme_id: str) -> PublishResult:
     """Validate Staging, then atomically snapshot it into Production."""
+    log.info("publish requested", extra={"theme_id": theme_id})
     report = validate_theme(theme_id)
     if not report.ok:
+        log.warning(
+            "publish BLOCKED by validation gate",
+            extra={"theme_id": theme_id, "failed": len(report.failures)},
+        )
         raise PublishBlocked(report)
     export = StagingGraphRepo().export_theme(theme_id)
     counts = ProductionGraphRepo().replace_theme(theme_id, export["nodes"], export["edges"])
+    log.info("publish DONE", extra={"theme_id": theme_id, **counts})
     return PublishResult(counts=counts, report=report)
 
 

@@ -19,6 +19,37 @@ const KIND_COLOR: Record<string, string> = {
   job: 'var(--dim)',
 };
 
+// Engine log levels captured during the run (kind === 'log').
+const LEVEL_COLOR: Record<string, string> = {
+  DEBUG: '#6f7db0',
+  INFO: '#8fb7ff',
+  WARNING: 'var(--gold)',
+  ERROR: 'var(--danger)',
+  CRITICAL: 'var(--danger)',
+};
+
+function EventLine({ ev }: { ev: AgentEvent }) {
+  if (ev.kind === 'log') {
+    const color = LEVEL_COLOR[ev.level ?? 'INFO'] ?? 'var(--dim)';
+    return (
+      <div style={{ marginBottom: 2, whiteSpace: 'pre-wrap', opacity: ev.level === 'DEBUG' ? 0.8 : 1 }}>
+        <span style={{ color }}>
+          {(ev.level ?? 'LOG').padEnd(5)} {ev.logger?.replace(/^chainos\./, '')}
+        </span>{' '}
+        <span style={{ color: 'var(--text)' }}>{ev.message}</span>
+      </div>
+    );
+  }
+  return (
+    <div style={{ marginBottom: 4, whiteSpace: 'pre-wrap' }}>
+      <span style={{ color: KIND_COLOR[ev.kind] ?? 'var(--text)', fontWeight: 600 }}>
+        [{ev.kind}]
+      </span>{' '}
+      {ev.message}
+    </div>
+  );
+}
+
 export default function ThemeConsole({ params }: { params: { id: string } }) {
   const themeId = params.id;
   const qc = useQueryClient();
@@ -35,6 +66,7 @@ export default function ThemeConsole({ params }: { params: { id: string } }) {
 
   const [events, setEvents] = useState<AgentEvent[]>([]);
   const [running, setRunning] = useState(false);
+  const [showLogs, setShowLogs] = useState(true);
   const abortRef = useRef<AbortController | null>(null);
 
   async function onRun() {
@@ -83,7 +115,22 @@ export default function ThemeConsole({ params }: { params: { id: string } }) {
 
       <div className="grid" style={{ gridTemplateColumns: '1.2fr 1fr', alignItems: 'start' }}>
         <section className="panel">
-          <h3 style={{ marginTop: 0 }}>Agent console</h3>
+          <div className="row" style={{ justifyContent: 'space-between', alignItems: 'baseline' }}>
+            <h3 style={{ marginTop: 0 }}>Agent console</h3>
+            <label className="dim" style={{ fontSize: 12, cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={showLogs}
+                onChange={(e) => setShowLogs(e.target.checked)}
+                style={{ width: 'auto', marginRight: 6 }}
+              />
+              engine logs
+              {(() => {
+                const n = events.filter((e) => e.kind === 'log').length;
+                return n ? ` (${n})` : '';
+              })()}
+            </label>
+          </div>
           <div
             className="mono"
             style={{
@@ -99,17 +146,15 @@ export default function ThemeConsole({ params }: { params: { id: string } }) {
             {events.length === 0 && (
               <div className="dim">
                 Press “Run Agent” to discover constituents, draft the value-chain skeleton, save
-                it to Staging, and raise Need-Fact tickets.
+                it to Staging, and raise Need-Fact tickets. Set <span className="mono">LOG_LEVEL=DEBUG</span>{' '}
+                in <span className="mono">.env</span> for verbose engine logs here.
               </div>
             )}
-            {events.map((ev, i) => (
-              <div key={i} style={{ marginBottom: 4 }}>
-                <span style={{ color: KIND_COLOR[ev.kind] ?? 'var(--text)' }}>
-                  [{ev.kind}]
-                </span>{' '}
-                {ev.message}
-              </div>
-            ))}
+            {events
+              .filter((ev) => showLogs || ev.kind !== 'log')
+              .map((ev, i) => (
+                <EventLine key={i} ev={ev} />
+              ))}
           </div>
         </section>
 

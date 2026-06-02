@@ -169,6 +169,8 @@ DATABASE_URL=            # Postgres
 REDIS_URL=
 PINECONE_API_KEY=
 MARKET_DATA_API_KEY=     # licensed price/market-cap feed
+LOG_LEVEL=INFO          # DEBUG = verbose agent/LLM/graph trace (also streamed to Studio console)
+LOG_FORMAT=text         # text | json (structured)
 # model ids (overridable)
 MODEL_DEEP_ANTHROPIC=claude-opus-4-8
 MODEL_MEDIUM_ANTHROPIC=claude-sonnet-4-6
