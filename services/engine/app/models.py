@@ -28,6 +28,9 @@ class Theme(IdMixin, TimestampMixin, Base):
     model_assignment: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     seed_tickers: Mapped[list[str]] = mapped_column(JSON, default=list)
     context_notes: Mapped[str | None] = mapped_column(Text, default=None)
+    # Admin-pasted research output (e.g. from the Gemini Deep Research UI). The agent
+    # structures THIS into the graph instead of calling a research API itself.
+    research_report: Mapped[str | None] = mapped_column(Text, default=None)
     published_at: Mapped[datetime | None] = mapped_column(default=None)
 
     jobs: Mapped[list[Job]] = relationship(back_populates="theme", cascade="all, delete-orphan")

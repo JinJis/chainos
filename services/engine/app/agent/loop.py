@@ -34,7 +34,6 @@ from .prompts import (
     STRUCTURE_SCHEMA,
     STRUCTURE_SYSTEM,
     gaps_user,
-    research_brief,
     structure_user,
 )
 from .state import AgentState
@@ -90,30 +89,6 @@ def _filter_seed_by_depth(depth: int) -> dict[str, list[dict[str, Any]]]:
         if e.get("from") in kept_ids and e.get("to") in kept_ids:
             edges.append(e)
     return {"nodes": nodes, "edges": edges}
-
-
-# ── RESEARCH ──────────────────────────────────────────────────────────────────
-def _do_research(
-    *,
-    theme_name: str,
-    depth_max: int,
-    seed_tickers: list[str],
-    providers: dict[str, str],
-    offline: bool,
-    on_event: Callable[[str, str], None],
-) -> str:
-    """Run the RESEARCH tier and return the grounded briefing text. Streams progress
-    via on_event(kind, text)."""
-    brief = research_brief(theme_name, depth_max, seed_tickers)
-    logger.debug("RESEARCH BRIEF\n%s", brief)
-    if offline:
-        on_event("status", "offline — reproducing the seed graph (no live web research)")
-        return ""
-    resp = get_router().research(
-        brief, provider=_provider(providers, Tier.RESEARCH), on_event=on_event
-    )
-    logger.debug("RESEARCH REPORT (%d chars)\n%s", len(resp.text), resp.text[:8000])
-    return resp.text
 
 
 # ── DEEP: structure the briefing into the graph ──────────────────────────────
@@ -410,11 +385,16 @@ def run_agent(
     depth_max: int,
     providers: dict[str, str],
     emit: EmitFn,
+    research_report: str = "",
     seed_tickers: list[str] | None = None,
 ) -> None:
-    """Run the full pipeline, emitting an AgentEvent per step (and per streamed
-    research thought). The caller runs this in a worker thread and streams events
-    to the Studio console + persists them."""
+    """Structure an admin-provided research document into the value-chain graph.
+
+    The admin runs Deep Research in the Gemini UI and pastes the result on the theme
+    (Research document). This agent ingests THAT text, structures it with the DEEP
+    model into the graph (JSON first pass), persists it, and raises Need-Fact tickets
+    for the gaps — which the admin resolves by uploading IR / disclosure evidence.
+    The caller runs this in a worker thread and streams events to the console."""
     settings = get_settings()
     offline = settings.offline
     counter = {"seq": 0}
@@ -423,6 +403,7 @@ def run_agent(
         emit(AgentEvent(counter["seq"], kind, message, data or {}, ephemeral))
         counter["seq"] += 1
 
+    report = (research_report or "").strip()
     logger.info(
         "agent run START",
         extra={
@@ -430,55 +411,24 @@ def run_agent(
             "theme": theme_name,
             "depth": depth_max,
             "offline": offline,
+            "research_chars": len(report),
             "providers": providers or {},
         },
     )
-    ev(
-        "start",
-        f"Agent started for '{theme_name}' (depth {depth_max}) — "
-        f"{'offline seed' if offline else 'live web research'}",
-    )
+    ev("start", f"Agent started for '{theme_name}' (depth {depth_max})")
 
-    # ── RESEARCH (streaming) ──────────────────────────────────────────────────
-    # Stream the Deep Research agent's thought summaries live, plus a lightweight
-    # "drafting report" progress as the final report text streams in.
-    text_progress = {"chars": 0, "emitted": 0}
-
-    def on_research(kind: str, text: str) -> None:
-        if not text:
-            return
-        if kind == "thought":
-            logger.debug("research thought: %s", text)
-            ev("research", f"🔍 {text.strip()}", ephemeral=True)
-        elif kind == "text":
-            text_progress["chars"] += len(text)
-            if text_progress["chars"] - text_progress["emitted"] >= 600:
-                text_progress["emitted"] = text_progress["chars"]
-                ev("research", f"📝 drafting report… {text_progress['chars']} chars", ephemeral=True)
-        else:  # status
-            logger.info("research: %s", text)
-            ev("research", f"· {text}")
-
-    report = ""
-    try:
-        report = _do_research(
-            theme_name=theme_name,
-            depth_max=depth_max,
-            seed_tickers=seed_tickers or [],
-            providers=providers,
-            offline=offline,
-            on_event=on_research,
+    # ── RESEARCH: ingest the admin-provided document ──────────────────────────
+    if report:
+        ev("research", f"📄 Ingesting research document — {len(report):,} chars → structuring with DEEP")
+        logger.debug("RESEARCH DOC\n%s", report[:8000])
+    elif offline:
+        ev("research", "No research document — reproducing the AI Data Centers seed graph")
+    else:
+        ev(
+            "research",
+            "⚠ No research document. Paste your Gemini Deep Research output on the "
+            "theme's Research tab and re-run. Showing a derived skeleton for now.",
         )
-    except Exception as exc:  # research failed — fall through to seed/empty
-        logger.exception("RESEARCH failed", extra={"theme_id": theme_id})
-        ev("research", f"⚠ research failed ({type(exc).__name__}: {exc}); using seed/derived skeleton")
-    ev(
-        "research",
-        f"RESEARCH complete — {len(report)} chars of grounded findings"
-        if report
-        else "RESEARCH skipped (offline) — using seed dataset",
-        {"chars": len(report)},
-    )
 
     # ── DEEP → PERSIST → GAPS (LangGraph) ─────────────────────────────────────
     initial: AgentState = {

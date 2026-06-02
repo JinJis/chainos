@@ -16,6 +16,7 @@ export interface Theme {
   staging_counts: { nodes?: number; edges?: number };
   production_counts: { nodes?: number; edges?: number };
   open_tickets: number;
+  research_chars: number;
 }
 
 export interface Ticket {
@@ -116,6 +117,16 @@ export const api = {
     }).then((r) => json<Theme>(r)),
   deleteTheme: (id: string) =>
     fetch(`${BASE}/themes/${id}`, { method: 'DELETE' }).then((r) => json(r)),
+  researchBrief: (themeId: string) =>
+    fetch(`${BASE}/themes/${themeId}/research/brief`).then((r) => json<{ brief: string }>(r)),
+  getResearch: (themeId: string) =>
+    fetch(`${BASE}/themes/${themeId}/research`).then((r) => json<{ report: string; chars: number }>(r)),
+  saveResearch: (themeId: string, report: string) =>
+    fetch(`${BASE}/themes/${themeId}/research`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ report }),
+    }).then((r) => json<{ report: string; chars: number }>(r)),
   listTickets: (themeId: string) =>
     fetch(`${BASE}/tickets?theme_id=${themeId}`).then((r) => json<Ticket[]>(r)),
   attachSource: (ticketId: string, form: FormData) =>

@@ -30,9 +30,24 @@ class ThemeOut(BaseModel):
     staging_counts: dict[str, int] = Field(default_factory=dict)
     production_counts: dict[str, int] = Field(default_factory=dict)
     open_tickets: int = 0
+    research_chars: int = 0  # length of the admin-provided research document
 
     class Config:
         from_attributes = True
+
+
+# ── Research document (admin-provided, e.g. from the Gemini Deep Research UI) ──
+class ResearchUpdate(BaseModel):
+    report: str
+
+
+class ResearchOut(BaseModel):
+    report: str
+    chars: int
+
+
+class ResearchBriefOut(BaseModel):
+    brief: str
 
 
 # ── Jobs / events ─────────────────────────────────────────────────────────────

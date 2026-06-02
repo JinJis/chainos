@@ -7,6 +7,7 @@ import { api, runAgent, type AgentEvent, type ParsePreview, type Ticket } from '
 import { VerifyPanel } from '../../../components/VerifyPanel';
 import { FlowsEditor } from '../../../components/FlowsEditor';
 import { PublishPanel } from '../../../components/PublishPanel';
+import { ResearchPanel } from '../../../components/ResearchPanel';
 
 const KIND_COLOR: Record<string, string> = {
   start: 'var(--dim)',
@@ -104,14 +105,25 @@ export default function ThemeConsole({ params }: { params: { id: string } }) {
           </div>
         </div>
         <div className="row">
-          <button className="primary" onClick={onRun} disabled={running}>
-            {running ? '⏳ Running…' : '▶ Run Agent'}
+          <button
+            className="primary"
+            onClick={onRun}
+            disabled={running}
+            title={
+              (theme?.research_chars ?? 0) > 0
+                ? 'Structure the saved research document into the graph'
+                : 'Tip: save a research document first for a real build'
+            }
+          >
+            {running ? '⏳ Running…' : '② ▶ Run Agent'}
           </button>
           {running && (
             <button onClick={() => abortRef.current?.abort()}>Stop</button>
           )}
         </div>
       </div>
+
+      <ResearchPanel themeId={themeId} />
 
       <div className="grid" style={{ gridTemplateColumns: '1.2fr 1fr', alignItems: 'start' }}>
         <section className="panel">
@@ -145,9 +157,11 @@ export default function ThemeConsole({ params }: { params: { id: string } }) {
           >
             {events.length === 0 && (
               <div className="dim">
-                Press “Run Agent” to discover constituents, draft the value-chain skeleton, save
-                it to Staging, and raise Need-Fact tickets. Set <span className="mono">LOG_LEVEL=DEBUG</span>{' '}
-                in <span className="mono">.env</span> for verbose engine logs here.
+                Save a research document above, then press “Run Agent”: the DEEP model
+                structures it into the value-chain graph (Staging) and raises Need-Fact
+                tickets for the gaps — which you resolve by uploading IR / disclosure
+                evidence. Set <span className="mono">LOG_LEVEL=DEBUG</span> in{' '}
+                <span className="mono">.env</span> for verbose engine logs here.
               </div>
             )}
             {events
