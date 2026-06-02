@@ -1,0 +1,165 @@
+# Chainos — full local stack in one command:
+#
+#   docker compose up --build -d
+#
+# Brings up datastores + Engine (runs migrations) + a one-shot seed + Studio,
+# Terminal, and the Predict scheduler. Then open:
+#   Terminal  http://localhost:3000   (the 3D canvas)
+#   Studio    http://localhost:3001   (admin data factory)
+#   Engine    http://localhost:8000/health
+#
+# LLM keys are optional — without them the Engine runs deterministic/offline and
+# the seed + demo still work. To enable live model calls, put ANTHROPIC_API_KEY
+# and/or GOOGLE_API_KEY in a .env file next to this one.
+name: chainos
+
+x-datastore-env: &datastore-env
+  NEO4J_URI: bolt://neo4j:7687
+  NEO4J_USER: neo4j
+  NEO4J_PASSWORD: chainos-dev-pw
+  NEO4J_STAGING_DB: staging
+  NEO4J_PRODUCTION_DB: production
+  DATABASE_URL: postgresql+psycopg://chainos:chainos-dev-pw@postgres:5432/chainos
+  REDIS_URL: redis://redis:6379/0
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+  LLM_OFFLINE: ${LLM_OFFLINE:-0}
+  # Set LOG_LEVEL=DEBUG in your .env for verbose engine logs (container + Studio console).
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  LOG_FORMAT: ${LOG_FORMAT:-text}
+
+services:
+  # ── datastores ──────────────────────────────────────────────────────────────
+  neo4j:
+    image: neo4j:5.24
+    container_name: chainos-neo4j
+    ports: ["7474:7474", "7687:7687"]
+    environment:
+      NEO4J_AUTH: neo4j/chainos-dev-pw
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_dbms_security_procedures_unrestricted: apoc.*
+    volumes: ["neo4j-data:/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:7474 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 20s
+
+  postgres:
+    # Stock postgres (no init-script mount) for maximum portability. pgvector
+    # isn't used yet (Predict uses Redis + a name dictionary); reintroduce the
+    # pgvector image + `CREATE EXTENSION vector` when RAG embeddings land.
+    image: postgres:16-alpine
+    container_name: chainos-postgres
+    ports: ["5432:5432"]
+    # Docker's default /dev/shm is 64 MB; Postgres can crash under it on Linux.
+    shm_size: 256mb
+    environment:
+      POSTGRES_USER: chainos
+      POSTGRES_PASSWORD: chainos-dev-pw
+      POSTGRES_DB: chainos
+      # Init into a SUBDIR of the volume — avoids "directory not empty"/permission
+      # init failures when the mount root carries volume metadata (a common cause
+      # of Postgres exiting on first start across Docker setups).
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chainos -d chainos"]
+      interval: 5s
+      timeout: 5s
+      retries: 18
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: chainos-redis
+    ports: ["6379:6379"]
+    volumes: ["redis-data:/data"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 18
+      start_period: 10s
+
+  # ── Engine (FastAPI) — runs Alembic migrations on start ─────────────────────
+  engine:
+    build:
+      context: ./services/engine
+    image: chainos-engine:local
+    container_name: chainos-engine
+    environment: *datastore-env
+    ports: ["8000:8000"]
+    depends_on:
+      neo4j: { condition: service_healthy }
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request,sys; sys.exit(0) if urllib.request.urlopen('http://localhost:8000/health').status==200 else sys.exit(1)
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  # ── one-shot: build + publish the AI Data Centers seed, then exit ───────────
+  # Reuses the Engine image. The `build` block (same context/tag as `engine`)
+  # means Compose builds it locally instead of trying to pull chainos-engine:local.
+  seed:
+    build:
+      context: ./services/engine
+    image: chainos-engine:local
+    container_name: chainos-seed
+    environment: *datastore-env
+    command: ["python", "-m", "app.seed.load"]
+    depends_on:
+      engine: { condition: service_healthy }
+    restart: "no"
+
+  # ── Predict momentum scheduler ──────────────────────────────────────────────
+  pipeline:
+    build:
+      context: ./services/pipeline
+    container_name: chainos-pipeline
+    environment:
+      <<: *datastore-env
+      ENGINE_URL: http://engine:8000
+      PREDICT_INTERVAL: "60"
+    depends_on:
+      engine: { condition: service_healthy }
+
+  # ── Studio (admin) ──────────────────────────────────────────────────────────
+  studio:
+    build:
+      context: .
+      dockerfile: apps/studio/Dockerfile
+    container_name: chainos-studio
+    environment:
+      ENGINE_URL: http://engine:8000
+    ports: ["3001:3001"]
+    depends_on:
+      engine: { condition: service_healthy }
+
+  # ── Terminal (user 3D canvas) ───────────────────────────────────────────────
+  terminal:
+    build:
+      context: .
+      dockerfile: apps/terminal/Dockerfile
+    container_name: chainos-terminal
+    environment:
+      ENGINE_URL: http://engine:8000
+    ports: ["3000:3000"]
+    depends_on:
+      engine: { condition: service_healthy }
+
+# Docker-managed named volumes — portable across machines, no host-path
+# ownership/permission issues. Wipe with `docker compose down -v`.
+volumes:
+  neo4j-data:
+  postgres-data:
+  redis-data:

@@ -1,0 +1,24 @@
+{
+  "name": "chainos",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Chainos — AI-driven value-chain intelligence platform",
+  "packageManager": "pnpm@9.12.0",
+  "engines": {
+    "node": ">=18.18.0"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "schema:gen": "pnpm --filter @chainos/graph-schema gen"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "prettier": "^3.3.3",
+    "turbo": "^2.1.3",
+    "typescript": "^5.5.4"
+  }
+}

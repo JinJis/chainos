@@ -1,7 +1,7 @@
 # CLAUDE.md — Chainos
 
 > Guidance for Claude Code when working in this repository.
-> Full product spec: see **`Chainos_PRD_v3.md`**. This file is the engineering source of truth; when in doubt, the PRD wins on *what*, this file wins on *how*.
+> Full product spec: see **`designs/Chainos_PRD_v0.0.1.md`**. This file is the engineering source of truth; when in doubt, the PRD wins on *what*, this file wins on *how*.
 
 ---
 
@@ -42,8 +42,10 @@ Chainos Studio (Admin)  →  STAGING DB  --[explicit Publish]-->  PRODUCTION DB 
   /graph-schema    # shared node/edge type defs (single source of truth for the schema)
   /ui              # shared design tokens / components
 /infra             # docker-compose, db init, migrations
+/designs           # product specs / design docs (PRD lives here)
+/ideas             # scratch space for not-yet-promoted ideas
 CLAUDE.md
-Chainos_PRD_v3.md
+designs/Chainos_PRD_v0.0.1.md
 ```
 
 > If the actual layout drifts, update this section in the same PR.
@@ -127,25 +129,31 @@ Required attrs on any quantitative value: `base_date`, `next_update`, `confidenc
 
 ## 8. Commands
 
-> Fill these in as the repo materializes; keep this list current — Claude Code relies on it.
+> Keep this list current — Claude Code relies on it. A root `Makefile` wraps these (`make help`).
 
 ```bash
 # install
-pnpm install                        # JS workspaces
-uv sync                             # or: pip install -e services/engine
+pnpm install                                   # JS workspaces
+cd services/engine && uv sync --extra dev      # Python deps (pipeline likewise)
+
+# infra (neo4j, postgres+pgvector, redis)
+docker compose -f infra/docker-compose.yml up -d        # or: make up
+
+# schema: regenerate the Python mirror after editing packages/graph-schema
+pnpm --filter @chainos/graph-schema gen                  # or: make schema
 
 # dev
-pnpm --filter terminal dev
-pnpm --filter studio dev
-uvicorn services.engine.main:app --reload
+pnpm --filter @chainos/terminal dev                      # or: make terminal (:3000)
+pnpm --filter @chainos/studio dev                        # or: make studio   (:3001)
+cd services/engine && uv run uvicorn app.main:app --reload --port 8000   # or: make engine
 
-# infra
-docker compose -f infra/docker-compose.yml up -d   # neo4j, postgres, redis
+# seed: build + publish the AI Data Centers sample graph
+cd services/engine && uv run python -m app.seed.load     # or: make seed
 
 # quality (run before declaring done)
-pnpm lint && pnpm typecheck
-ruff check services && mypy services
-pnpm test ; pytest services
+pnpm lint && pnpm typecheck                              # JS
+cd services/engine && uv run ruff check app tests && uv run mypy app
+pnpm test ; cd services/engine && uv run pytest          # or: make test
 ```
 
 ---
@@ -161,6 +169,8 @@ DATABASE_URL=            # Postgres
 REDIS_URL=
 PINECONE_API_KEY=
 MARKET_DATA_API_KEY=     # licensed price/market-cap feed
+LOG_LEVEL=INFO          # DEBUG = verbose agent/LLM/graph trace (also streamed to Studio console)
+LOG_FORMAT=text         # text | json (structured)
 # model ids (overridable)
 MODEL_DEEP_ANTHROPIC=claude-opus-4-8
 MODEL_MEDIUM_ANTHROPIC=claude-sonnet-4-6
@@ -174,7 +184,7 @@ MODEL_LOW_GOOGLE=gemini-3.1-flash-lite
 
 ## 10. Working style for Claude Code
 
-- **Read `Chainos_PRD_v3.md` before non-trivial work.** Match its terminology exactly (Studio/Terminal, Staging/Production, Need-Fact, Predict).
+- **Read `designs/Chainos_PRD_v0.0.1.md` before non-trivial work.** Match its terminology exactly (Studio/Terminal, Staging/Production, Need-Fact, Predict).
 - Make focused changes; keep PRs scoped to one milestone slice (see PRD §11).
 - When touching the schema, edit `packages/graph-schema` and propagate — don't fork type defs.
 - Prefer iterative refinement over rewrites; preserve working code.

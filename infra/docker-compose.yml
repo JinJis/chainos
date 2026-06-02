@@ -1,0 +1,53 @@
+# Chainos local infra: Neo4j (graph), Postgres+pgvector (RDBMS/RAG), Redis (cache/queue).
+# Bring up:  docker compose -f infra/docker-compose.yml up -d
+name: chainos
+
+services:
+  neo4j:
+    image: neo4j:5.24
+    container_name: chainos-neo4j
+    ports:
+      - "7474:7474" # browser
+      - "7687:7687" # bolt
+    environment:
+      NEO4J_AUTH: neo4j/chainos-dev-pw
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_dbms_security_procedures_unrestricted: apoc.*
+    volumes:
+      - ./.data/neo4j:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:7474 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: chainos-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: chainos
+      POSTGRES_PASSWORD: chainos-dev-pw
+      POSTGRES_DB: chainos
+    volumes:
+      - ./.data/postgres:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chainos -d chainos"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: redis:7-alpine
+    container_name: chainos-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./.data/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
